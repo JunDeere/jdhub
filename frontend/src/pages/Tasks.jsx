@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getProjects } from '../api/projects.js';
 import { createTask, getTasks, markTaskDone, updateTask } from '../api/tasks.js';
+import { dateInputToUtcIso, formatLocalDate, toUtcDateInput } from '../utils/dateTime.js';
 
 const statuses = ['backlog', 'todo', 'doing', 'blocked', 'done', 'cancelled'];
 const priorities = ['low', 'medium', 'high', 'urgent'];
@@ -16,11 +17,6 @@ const emptyForm = {
   related_project_id: '',
   tags: '',
 };
-
-function formatDate(value) {
-  if (!value) return 'No due date';
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value));
-}
 
 function taskLabel(value) {
   return value.replace('_', ' ');
@@ -88,7 +84,7 @@ export default function Tasks({ token, onTasksChanged }) {
     try {
       const payload = {
         ...form,
-        due_date: form.due_date || null,
+        due_date: dateInputToUtcIso(form.due_date),
         related_project_id: form.related_project_id || null,
         tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
       };
@@ -118,7 +114,7 @@ export default function Tasks({ token, onTasksChanged }) {
       status: task.status || 'todo',
       priority: task.priority || 'medium',
       category: task.category || 'Personal',
-      due_date: task.due_date ? task.due_date.slice(0, 10) : '',
+      due_date: toUtcDateInput(task.due_date),
       related_project_id: typeof task.related_project_id === 'object'
         ? task.related_project_id?._id || ''
         : task.related_project_id || '',
@@ -146,7 +142,7 @@ export default function Tasks({ token, onTasksChanged }) {
     <section className="tasks-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 5 MVP</p>
+          <p className="eyebrow">Work queue</p>
           <h2>Tasks</h2>
         </div>
         <span className="status-pill">{openCount} open tasks</span>
@@ -280,7 +276,7 @@ export default function Tasks({ token, onTasksChanged }) {
                     {task.description && <p>{task.description}</p>}
 
                     <div className="task-detail-row">
-                      <span>Due: {formatDate(task.due_date)}</span>
+                      <span>Due: {formatLocalDate(task.due_date, 'No due date')}</span>
                       {task.related_project_id?.name && (
                         <span>Project: {task.related_project_id.name}</span>
                       )}

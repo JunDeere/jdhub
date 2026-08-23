@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { completeReminder, createReminder, getReminders, updateReminder } from '../api/reminders.js';
+import { formatLocalDateTime, localDateTimeInputToUtcIso, localTimeZone, toLocalDateTimeInput } from '../utils/dateTime.js';
 
 const emptyForm = {
   title: '',
@@ -8,17 +9,6 @@ const emptyForm = {
   status: 'pending',
   tags: '',
 };
-
-function toLocalInput(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 16);
-}
-
-function formatDate(value) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
-}
 
 export default function Reminders({ token, onRemindersChanged }) {
   const [reminders, setReminders] = useState([]);
@@ -59,7 +49,11 @@ export default function Reminders({ token, onRemindersChanged }) {
     setError(null);
     setStatusMessage(null);
     try {
-      const payload = { ...form, tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean) };
+      const payload = {
+        ...form,
+        remind_at: localDateTimeInputToUtcIso(form.remind_at),
+        tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+      };
       if (editingId) {
         await updateReminder(token, editingId, payload);
         setStatusMessage('Reminder updated.');
@@ -81,7 +75,7 @@ export default function Reminders({ token, onRemindersChanged }) {
     setForm({
       title: reminder.title || '',
       description: reminder.description || '',
-      remind_at: toLocalInput(reminder.remind_at),
+      remind_at: toLocalDateTimeInput(reminder.remind_at),
       status: reminder.status || 'pending',
       tags: (reminder.tags || []).join(', '),
     });
@@ -104,7 +98,7 @@ export default function Reminders({ token, onRemindersChanged }) {
     <section className="reminders-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 7 MVP</p>
+          <p className="eyebrow">Internal reminders</p>
           <h2>Reminders</h2>
         </div>
         <span className="status-pill">{reminders.length} active reminders</span>
@@ -117,7 +111,7 @@ export default function Reminders({ token, onRemindersChanged }) {
           <div className="control-row">
             <div>
               <h3>{editingId ? 'Edit Reminder' : 'Add Reminder'}</h3>
-              <p className="muted">Set the date and time JDHub should track.</p>
+              <p className="muted">Times are saved in UTC and shown in {localTimeZone()}.</p>
             </div>
             {editingId && <button className="secondary-button" onClick={resetForm} type="button">Cancel edit</button>}
           </div>
@@ -164,7 +158,7 @@ export default function Reminders({ token, onRemindersChanged }) {
                         <span className="task-meta">{reminder.status}</span>
                         <h4>{reminder.title}</h4>
                       </div>
-                      <span className="entry-date">{formatDate(reminder.remind_at)}</span>
+                      <span className="entry-date">{formatLocalDateTime(reminder.remind_at)}</span>
                     </div>
                     {reminder.description && <p>{reminder.description}</p>}
                     {reminder.tags?.length > 0 && <div className="tag-row">{reminder.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}

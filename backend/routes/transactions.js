@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const authMiddleware = require('../middleware/auth');
+const { nowUtc, parseOptionalUtcDate, utcMonthRange } = require('../utils/dateTime');
 
 const router = express.Router();
 
@@ -19,12 +20,6 @@ function normalizeTags(tags) {
   return [];
 }
 
-function parseDate(value) {
-  if (!value) return new Date();
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date() : date;
-}
-
 function transactionPayload(body) {
   const amount = Number(body.amount);
 
@@ -33,7 +28,7 @@ function transactionPayload(body) {
     amount: Number.isFinite(amount) ? amount : 0,
     currency: typeof body.currency === 'string' && body.currency.trim() ? body.currency.trim().toUpperCase() : 'PHP',
     category: typeof body.category === 'string' && body.category.trim() ? body.category.trim() : 'Uncategorized',
-    date: parseDate(body.date),
+    date: parseOptionalUtcDate(body.date) || nowUtc(),
     merchant_or_source: typeof body.merchant_or_source === 'string' ? body.merchant_or_source.trim() : '',
     payment_method: typeof body.payment_method === 'string' ? body.payment_method.trim() : '',
     note: typeof body.note === 'string' ? body.note.trim() : '',
@@ -42,15 +37,8 @@ function transactionPayload(body) {
   };
 }
 
-function monthRange(value = new Date()) {
-  const date = new Date(value);
-  const start = new Date(date.getFullYear(), date.getMonth(), 1);
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 1);
-  return { start, end };
-}
-
 async function getMonthlySummary(userId, month) {
-  const { start, end } = monthRange(month);
+  const { start, end } = utcMonthRange(month);
   const rows = await Transaction.aggregate([
     {
       $match: {

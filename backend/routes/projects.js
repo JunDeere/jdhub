@@ -4,6 +4,7 @@ const Project = require('../models/Project');
 const Task = require('../models/Task');
 const Entry = require('../models/Entry');
 const authMiddleware = require('../middleware/auth');
+const { nowUtc, parseOptionalUtcDate } = require('../utils/dateTime');
 
 const router = express.Router();
 
@@ -22,12 +23,6 @@ function normalizeTags(tags) {
   return [];
 }
 
-function parseDate(value) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date;
-}
-
 function projectPayload(body) {
   const status = validStatuses.includes(body.status) ? body.status : 'active';
   const priority = validPriorities.includes(body.priority) ? body.priority : 'medium';
@@ -39,9 +34,9 @@ function projectPayload(body) {
     priority,
     notes: typeof body.notes === 'string' ? body.notes.trim() : '',
     tags: normalizeTags(body.tags),
-    start_date: parseDate(body.start_date),
-    target_date: parseDate(body.target_date),
-    archived_at: status === 'archived' ? new Date() : undefined,
+    start_date: parseOptionalUtcDate(body.start_date),
+    target_date: parseOptionalUtcDate(body.target_date),
+    archived_at: status === 'archived' ? nowUtc() : undefined,
   };
 }
 
@@ -137,7 +132,7 @@ router.patch('/:id/archive', async (req, res) => {
   try {
     const project = await Project.findOneAndUpdate(
       { _id: req.params.id, user_id: req.userId },
-      { status: 'archived', archived_at: new Date() },
+      { status: 'archived', archived_at: nowUtc() },
       { returnDocument: 'after' },
     );
 

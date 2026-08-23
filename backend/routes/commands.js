@@ -5,6 +5,7 @@ const Entry = require('../models/Entry');
 const Task = require('../models/Task');
 const Transaction = require('../models/Transaction');
 const authMiddleware = require('../middleware/auth');
+const { nowUtc, parseOptionalUtcDate } = require('../utils/dateTime');
 
 const router = express.Router();
 
@@ -38,7 +39,7 @@ function parseExpense(text) {
     amount: Number.isFinite(amount) ? amount : 0,
     currency: 'PHP',
     category,
-    date: new Date().toISOString().slice(0, 10),
+    date: nowUtc().toISOString().slice(0, 10),
     merchant_or_source: middle || category,
     payment_method: paymentMethod,
     note: text.trim(),
@@ -50,7 +51,7 @@ function parseCommand(rawText) {
   const text = String(rawText || '').trim();
   const lower = text.toLowerCase();
 
-  if (lower.startsWith('add note:')) {
+  if (lower.startsWith('add note:') || lower.startsWith('log life:')) {
     const content = text.slice(text.indexOf(':') + 1).trim();
     return {
       command_type: 'add_note',
@@ -97,7 +98,7 @@ function parseCommand(rawText) {
     action_type: null,
     record_type: null,
     payload: {},
-    error: 'Supported commands: add note:, create task:, log expense:',
+    error: 'Supported commands: add note:, log life:, create task:, log expense:',
   };
 }
 
@@ -129,7 +130,7 @@ function cleanPayload(actionType, body) {
       amount: Number.isFinite(amount) ? amount : 0,
       currency: typeof body.currency === 'string' && body.currency.trim() ? body.currency.trim().toUpperCase() : 'PHP',
       category: typeof body.category === 'string' && body.category.trim() ? body.category.trim() : 'Other',
-      date: body.date ? new Date(body.date) : new Date(),
+      date: parseOptionalUtcDate(body.date) || nowUtc(),
       merchant_or_source: typeof body.merchant_or_source === 'string' ? body.merchant_or_source.trim() : '',
       payment_method: typeof body.payment_method === 'string' ? body.payment_method.trim() : '',
       note: typeof body.note === 'string' ? body.note.trim() : '',

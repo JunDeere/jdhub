@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { archiveProject, createProject, getProjects, updateProject } from '../api/projects.js';
+import { dateInputToUtcIso, formatLocalDate, toUtcDateInput } from '../utils/dateTime.js';
 
 const statuses = ['backlog', 'active', 'paused', 'blocked', 'done', 'archived'];
 const priorities = ['low', 'medium', 'high'];
@@ -14,11 +15,6 @@ const emptyForm = {
   target_date: '',
   tags: '',
 };
-
-function formatDate(value) {
-  if (!value) return 'No date';
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value));
-}
 
 function label(value) {
   return value.replace('_', ' ');
@@ -75,8 +71,8 @@ export default function Projects({ token, onProjectsChanged }) {
     try {
       const payload = {
         ...form,
-        start_date: form.start_date || null,
-        target_date: form.target_date || null,
+        start_date: dateInputToUtcIso(form.start_date),
+        target_date: dateInputToUtcIso(form.target_date),
         tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
       };
 
@@ -105,8 +101,8 @@ export default function Projects({ token, onProjectsChanged }) {
       status: project.status || 'active',
       priority: project.priority || 'medium',
       notes: project.notes || '',
-      start_date: project.start_date ? project.start_date.slice(0, 10) : '',
-      target_date: project.target_date ? project.target_date.slice(0, 10) : '',
+      start_date: toUtcDateInput(project.start_date),
+      target_date: toUtcDateInput(project.target_date),
       tags: (project.tags || []).join(', '),
     });
     setError(null);
@@ -131,14 +127,14 @@ export default function Projects({ token, onProjectsChanged }) {
     <section className="projects-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 8 MVP</p>
+          <p className="eyebrow">Build tracking</p>
           <h2>Projects</h2>
         </div>
         <span className="status-pill">{activeCount} active projects</span>
       </div>
 
       <p className="module-description">
-        Track builds, maintenance work, paused ideas, and active initiatives. Tasks and Life Log entries can now be linked back to projects.
+        Track builds, maintenance work, paused ideas, and active initiatives. Tasks and notes can now be linked back to projects.
       </p>
 
       <div className="project-layout">
@@ -262,8 +258,8 @@ export default function Projects({ token, onProjectsChanged }) {
                     {project.description && <p>{project.description}</p>}
 
                     <div className="task-detail-row">
-                      <span>Start: {formatDate(project.start_date)}</span>
-                      <span>Target: {formatDate(project.target_date)}</span>
+                      <span>Start: {formatLocalDate(project.start_date, 'No date')}</span>
+                      <span>Target: {formatLocalDate(project.target_date, 'No date')}</span>
                     </div>
 
                     <div className="task-detail-row">

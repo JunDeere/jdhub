@@ -1,22 +1,17 @@
 const express = require('express');
 const ScheduleItem = require('../models/ScheduleItem');
 const authMiddleware = require('../middleware/auth');
+const { parseRequiredUtcDate } = require('../utils/dateTime');
 
 const router = express.Router();
 const statuses = ['scheduled', 'done', 'cancelled'];
-
-function parseDate(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
 
 function schedulePayload(body) {
   return {
     title: typeof body.title === 'string' ? body.title.trim() : '',
     description: typeof body.description === 'string' ? body.description.trim() : '',
-    start_at: parseDate(body.start_at),
-    end_at: parseDate(body.end_at),
+    start_at: parseRequiredUtcDate(body.start_at),
+    end_at: parseRequiredUtcDate(body.end_at),
     location: typeof body.location === 'string' ? body.location.trim() : '',
     status: statuses.includes(body.status) ? body.status : 'scheduled',
   };

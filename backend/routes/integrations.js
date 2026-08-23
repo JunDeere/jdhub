@@ -1,6 +1,7 @@
 const express = require('express');
 const IntegrationRecord = require('../models/IntegrationRecord');
 const authMiddleware = require('../middleware/auth');
+const { nowUtc } = require('../utils/dateTime');
 
 const router = express.Router();
 
@@ -82,7 +83,7 @@ router.patch('/:id/archive', async (req, res) => {
   try {
     const record = await IntegrationRecord.findOneAndUpdate(
       { _id: req.params.id, user_id: req.userId },
-      { archived_at: new Date() },
+      { archived_at: nowUtc() },
       { returnDocument: 'after' },
     );
 

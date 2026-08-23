@@ -24,7 +24,7 @@ Command Center
 - Saved Outputs
 
 Personal
-- Life Log
+- Notes
 - Tasks
 - Reminders
 - Scheduling
@@ -64,8 +64,41 @@ docs/06-security-and-privacy.md
 docs/07-build-milestones.md
 docs/08-weekly-sprint-plan.md
 docs/09-future-ideas.md
+docs/10-mvp2-roadmap.md
+docs/11-progress-log.md
+```
+
+## Current Status
+
+MVP 1 is implemented and deployable through Docker Compose.
+
+Current focus: MVP 2 usability, user/admin basics, data management, production readiness, and quality.
+
+## Docker Data Persistence
+
+MongoDB uses the named Docker volume `jdhub_mongo-data`, mounted at `/data/db` in the `mongo` service.
+
+Normal redeploys keep data:
+
+```powershell
+docker compose up -d --build
+docker compose down
+```
+
+Do not use this unless you intentionally want to delete the database volume:
+
+```powershell
+docker compose down -v
+docker volume rm jdhub_mongo-data
+```
+
+Basic backup command:
+
+```powershell
+docker exec jdhub-mongo-1 mongodump --db jdhub --archive=/tmp/jdhub.archive
+docker cp jdhub-mongo-1:/tmp/jdhub.archive ./jdhub.archive
 ```
 
 ## Current Rule
 
-Do not build everything at once. Build the core foundation first, then expand each module.
+Make the existing modules clear, safe, and reliable before adding more major modules.

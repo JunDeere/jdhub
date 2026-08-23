@@ -12,6 +12,32 @@ The goal is to avoid building everything at once. Each milestone should produce 
 Core first. Flesh out each function later.
 ```
 
+## Current Progress
+
+MVP 1 is complete through the original Week 12 sprint plan.
+
+Detailed project history is tracked in `docs/11-progress-log.md`.
+
+Implemented and deployable through Docker Compose:
+
+- Dashboard
+- Auth
+- Life Log
+- Tasks
+- Reminders
+- Scheduling
+- Finance
+- Projects
+- Knowledge Base
+- Command Center
+- Global search
+- Server Manager
+- Integrations
+- Module Status
+- Collapsible sidebar
+
+Current focus should shift from adding modules to making the existing modules clearer, safer, and easier to use.
+
 ---
 
 ## Milestone 1 - Repository and Documentation
@@ -321,102 +347,127 @@ User can search for `nginx blackout` and see matching records.
 
 ---
 
-## Milestone 14 - Receipts MVP
+## Milestone 14 - MVP 2 Usability
 
 ### Goal
 
-Add manual receipt tracking.
+Make JDHub understandable without a tutorial.
 
 ### Tasks
 
-- Create Receipt model
-- Add Receipts page
-- Add manual receipt form
-- Link receipt to finance transaction
-- Add file upload later
+- Add onboarding checklist on Dashboard
+- Add empty-state actions
+- Hide or disable planned modules until implemented
+- Improve Command Center examples and command chips
+- Add first-run sample prompts without fake data
+- Add clear module descriptions and next actions
+- Improve validation and friendly errors
+- Add success confirmations
+- Improve loading states
 
 ### Done When
 
-User can manually add receipts and link them to expenses.
+A new user can sign in and understand what to do next without separate explanation.
 
 ---
 
-## Milestone 15 - Server Manager MVP
+## Milestone 15 - User and Admin Basics
 
 ### Goal
 
-Track server notes and infrastructure records manually.
+Add basic user setup and admin controls.
 
 ### Tasks
 
-- Create server records
-- Add server notes
-- Add incident logs
-- Add Docker container records manually
-- Add port records manually
-- Add domain/subdomain notes
+- Add account profile completion prompt
+- Add user roles: owner, admin, member
+- Make Module Status/admin settings role-aware
+- Add password change
+- Add optional invite-only registration
+- Improve logout/session expiry behavior
 
 ### Done When
 
-User can document Acer server, Docker containers, ports, and incidents.
+JDHub can distinguish owner/admin/member behavior and guide account setup.
 
 ---
 
-## Milestone 16 - Integrations Placeholder
+## Milestone 16 - Data Management
 
 ### Goal
 
-Create a place to track future integrations.
+Make records easier to export, import, archive, restore, and back up.
 
 ### Tasks
 
-- Create Integration model
-- Add Integrations page
-- Add provider, status, notes
-- Add planned/active/broken status
+- Export data as JSON/CSV
+- Import basic CSV for transactions/tasks
+- Add archive views for tasks, projects, logs, and knowledge pages
+- Add soft-delete restore flow
+- Add basic backup script or documented backup command
+- Add data retention notes
 
 ### Done When
 
-User can record planned integrations like Google Calendar, GitHub, n8n, and local AI.
+The owner can manage and recover data without directly touching MongoDB.
 
 ---
 
-## Milestone 17 - Local AI / Outside AI Later
+## Milestone 17 - Production Readiness
 
 ### Goal
 
-Enhance Command Center with AI.
+Make Docker deployment safer and clearer for real hosting.
 
 ### Tasks
 
-- Add AI provider setting
-- Add local AI test endpoint
-- Add safe tool layer
-- Add structured AI response validation
-- Keep confirmation before writes
+- Add production `.env.example`
+- Add strong JWT secret guidance
+- Add Docker Compose production override
+- Add HTTPS / reverse proxy notes
+- Confirm MongoDB persistent volume behavior
+- Add rate limiting for auth routes
+- Add Helmet/security headers
+- Configure CORS by environment
+- Add healthchecks in Docker Compose
+- Add basic server deployment guide
 
 ### Done When
 
-AI can help parse a command, but JDHub still controls database writes.
+JDHub has safer production defaults and clear deployment instructions.
 
 ---
 
-## Milestone 18 - Polish and Deployment
+## Milestone 18 - Quality
 
 ### Goal
 
-Make JDHub usable daily.
+Reduce regression risk and align documentation with the real app.
 
 ### Tasks
 
-- Improve UI
-- Add loading states
-- Add error handling
-- Add backups
-- Add Docker restart policies
-- Add HTTPS behind Nginx Proxy Manager
-- Add deployment notes
+- Add API smoke tests
+- Add frontend form behavior tests
+- Add seed/demo data script
+- Fix current ESLint issues
+- Add README setup instructions matching the real app
 
 ### Done When
 
-JDHub is stable enough to use personally.
+Core workflows have checks and setup docs match the actual project.
+
+---
+
+## Later Milestones
+
+These should wait until MVP 2 makes the existing app clearer and safer:
+
+- Receipts MVP
+- File uploads
+- OCR
+- Google Calendar integration
+- GitHub integration
+- n8n integration
+- Local AI/Ollama
+- Outside AI through safe backend tools
+- Mobile/PWA polish

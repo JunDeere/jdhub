@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Task = require('../models/Task');
 const authMiddleware = require('../middleware/auth');
+const { nowUtc, parseOptionalUtcDate } = require('../utils/dateTime');
 
 const router = express.Router();
 
@@ -20,12 +21,6 @@ function normalizeTags(tags) {
   return [];
 }
 
-function parseDate(value) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date;
-}
-
 function parseObjectId(value) {
   if (!value) return null;
   return mongoose.Types.ObjectId.isValid(value) ? value : undefined;
@@ -41,7 +36,7 @@ function taskPayload(body) {
     status,
     priority,
     category: typeof body.category === 'string' && body.category.trim() ? body.category.trim() : 'Personal',
-    due_date: parseDate(body.due_date),
+    due_date: parseOptionalUtcDate(body.due_date),
     related_project_id: parseObjectId(body.related_project_id),
     tags: normalizeTags(body.tags),
   };
@@ -89,8 +84,8 @@ router.patch('/:id', async (req, res) => {
     const payload = taskPayload(req.body);
     if (!payload.title) return res.status(400).json({ error: 'Title is required' });
 
-    if (payload.status === 'done') payload.completed_at = new Date();
-    if (payload.status === 'cancelled') payload.cancelled_at = new Date();
+    if (payload.status === 'done') payload.completed_at = nowUtc();
+    if (payload.status === 'cancelled') payload.cancelled_at = nowUtc();
     if (!['done', 'cancelled'].includes(payload.status)) {
       payload.completed_at = undefined;
       payload.cancelled_at = undefined;
@@ -114,7 +109,7 @@ router.patch('/:id/done', async (req, res) => {
   try {
     const task = await Task.findOneAndUpdate(
       { _id: req.params.id, user_id: req.userId },
-      { status: 'done', completed_at: new Date() },
+      { status: 'done', completed_at: nowUtc() },
       { returnDocument: 'after' },
     );
 

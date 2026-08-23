@@ -1,3 +1,22 @@
+import {
+  Activity,
+  Bell,
+  BookOpen,
+  Bot,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  CircleDollarSign,
+  ClipboardList,
+  FileText,
+  FolderKanban,
+  Gauge,
+  Plug,
+  Receipt,
+  SearchCheck,
+  Server,
+  Settings,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import CommandCenter from './pages/CommandCenter.jsx';
 import Login from './pages/Login.jsx';
@@ -6,55 +25,78 @@ import Finance from './pages/Finance.jsx';
 import Integrations from './pages/Integrations.jsx';
 import KnowledgeBase from './pages/KnowledgeBase.jsx';
 import LifeLog from './pages/LifeLog.jsx';
+import ModuleStatus from './pages/ModuleStatus.jsx';
 import Projects from './pages/Projects.jsx';
 import Reminders from './pages/Reminders.jsx';
 import Scheduling from './pages/Scheduling.jsx';
 import ServerManager from './pages/ServerManager.jsx';
 import Tasks from './pages/Tasks.jsx';
-import { getCurrentUser, getHealth, updateCurrentUser } from './api/auth.js';
+import { getCurrentUser, getDashboard, getHealth, updateCurrentUser } from './api/auth.js';
+import { formatLocalDateTime } from './utils/dateTime.js';
 
 const STORAGE_KEY = 'jdhubToken';
 const THEME_KEY = 'jdhubTheme';
+const SIDEBAR_KEY = 'jdhubSidebarCollapsed';
+
+const navIcons = {
+  dashboard: Gauge,
+  'command-center': SearchCheck,
+  'life-log': FileText,
+  tasks: ClipboardList,
+  reminders: Bell,
+  scheduling: CalendarDays,
+  finance: CircleDollarSign,
+  projects: FolderKanban,
+  'knowledge-base': BookOpen,
+  files: FileText,
+  receipts: Receipt,
+  automations: Bot,
+  'server-manager': Server,
+  integrations: Plug,
+  'module-status': Activity,
+  settings: Settings,
+};
 
 const navGroups = [
   {
     label: 'Core',
     items: [
-      { id: 'dashboard', label: 'Dashboard', status: 'Week 3 shell' },
-      { id: 'command-center', label: 'Command Center', status: 'Week 10 active' },
+      { id: 'dashboard', label: 'Dashboard' },
+      { id: 'command-center', label: 'Command Center' },
     ],
   },
   {
     label: 'Personal',
     items: [
-      { id: 'life-log', label: 'Life Log', status: 'Week 4 done' },
-      { id: 'tasks', label: 'Tasks', status: 'Week 5 done' },
-      { id: 'reminders', label: 'Reminders', status: 'Week 7 active' },
-      { id: 'scheduling', label: 'Scheduling', status: 'Week 7 active' },
-      { id: 'finance', label: 'Finance', status: 'Week 6 done' },
+      { id: 'life-log', label: 'Notes' },
+      { id: 'tasks', label: 'Tasks' },
+      { id: 'reminders', label: 'Reminders' },
+      { id: 'scheduling', label: 'Scheduling' },
+      { id: 'finance', label: 'Finance' },
     ],
   },
   {
     label: 'Work / Build',
     items: [
-      { id: 'projects', label: 'Projects', status: 'Week 8 active' },
-      { id: 'knowledge-base', label: 'Knowledge Base', status: 'Week 9 active' },
-      { id: 'files', label: 'Files', status: 'Future module' },
+      { id: 'projects', label: 'Projects' },
+      { id: 'knowledge-base', label: 'Knowledge Base' },
+      { id: 'files', label: 'Files', disabled: true },
     ],
   },
   {
     label: 'Tools',
     items: [
-      { id: 'receipts', label: 'Receipts', status: 'Future module' },
-      { id: 'automations', label: 'Automations', status: 'Manual records later' },
-      { id: 'server-manager', label: 'Server Manager', status: 'Week 12 active' },
-      { id: 'integrations', label: 'Integrations', status: 'Week 12 active' },
+      { id: 'receipts', label: 'Receipts', disabled: true },
+      { id: 'automations', label: 'Automations', disabled: true },
+      { id: 'server-manager', label: 'Server Manager' },
+      { id: 'integrations', label: 'Integrations' },
     ],
   },
   {
     label: 'System',
     items: [
-      { id: 'settings', label: 'Settings', status: 'Placeholder' },
+      { id: 'module-status', label: 'Module Status' },
+      { id: 'settings', label: 'Settings' },
     ],
   },
 ];
@@ -67,9 +109,9 @@ const pageDetails = {
     next: ['Add command message collection', 'Build prefix parser', 'Show action preview before writes'],
   },
   'life-log': {
-    title: 'Life Log',
-    eyebrow: 'Next real module',
-    description: 'Life Log stores personal notes, incidents, technical fixes, ideas, health notes, and learning records.',
+    title: 'Notes',
+    eyebrow: 'Personal records',
+    description: 'Notes stores personal records, incidents, technical fixes, ideas, health notes, and learning records.',
     next: ['Create Entry model', 'Add create/list/update/archive APIs', 'Show recent entries on Dashboard'],
   },
   tasks: {
@@ -100,7 +142,7 @@ const pageDetails = {
     title: 'Projects',
     eyebrow: 'Build tracking',
     description: 'Projects track anything being built, planned, paused, or maintained, including JDHub itself.',
-    next: ['Create Project model', 'Add notes', 'Link tasks and life logs'],
+    next: ['Create Project model', 'Add notes', 'Link tasks and notes'],
   },
   'knowledge-base': {
     title: 'Knowledge Base',
@@ -111,18 +153,21 @@ const pageDetails = {
   files: {
     title: 'Files',
     eyebrow: 'Private file metadata',
+    state: 'Planned',
     description: 'Files should begin as local/private metadata linked to modules. Google Drive integration comes later.',
     next: ['Plan upload safety', 'Store metadata', 'Protect downloads'],
   },
   receipts: {
     title: 'Receipts',
     eyebrow: 'Manual receipt records',
+    state: 'Planned',
     description: 'Receipts start as manual merchant, amount, date, category, and notes records, then link to finance transactions.',
     next: ['Create Receipt model later', 'Link to transactions', 'Leave OCR for future work'],
   },
   automations: {
     title: 'Automations',
     eyebrow: 'Manual records only',
+    state: 'Planned',
     description: 'Automations will document n8n, Make.com, bots, and workflows. Triggering webhooks is not part of the MVP.',
     next: ['Store platform and status', 'Store purpose and notes', 'Require confirmation for future triggers'],
   },
@@ -153,6 +198,74 @@ function getNextThemeMode(theme) {
   if (theme === 'system') return 'dark';
   if (theme === 'dark') return 'light';
   return 'system';
+}
+
+function buildNotifications(dashboard, health) {
+  if (!dashboard) return [];
+
+  const items = [];
+
+  if (!dashboard.recentEntries?.length) {
+    items.push({
+      id: 'first-note',
+      title: 'Write your first note',
+      detail: 'Use Notes for quick thoughts, fixes, and incidents.',
+      action: 'Open Notes',
+      page: 'life-log',
+    });
+  }
+
+  if (!dashboard.openTasks?.length) {
+    items.push({
+      id: 'first-task',
+      title: 'Create your first task',
+      detail: 'Track the next action you want JDHub to remember.',
+      action: 'Open Tasks',
+      page: 'tasks',
+    });
+  }
+
+  if (!dashboard.activeProjects?.length) {
+    items.push({
+      id: 'first-project',
+      title: 'Add a project',
+      detail: 'Group builds, maintenance work, and longer ideas.',
+      action: 'Open Projects',
+      page: 'projects',
+    });
+  }
+
+  if (!dashboard.financeSummary?.income && !dashboard.financeSummary?.expense) {
+    items.push({
+      id: 'first-transaction',
+      title: 'Log a transaction',
+      detail: 'Start monthly finance totals with income or expenses.',
+      action: 'Open Finance',
+      page: 'finance',
+    });
+  }
+
+  dashboard.upcomingReminders?.slice(0, 3).forEach((reminder) => {
+    items.push({
+      id: `reminder-${reminder._id}`,
+      title: reminder.title,
+      detail: `Reminder due ${formatLocalDateTime(reminder.remind_at)}.`,
+      action: 'Open Reminders',
+      page: 'reminders',
+    });
+  });
+
+  items.push({
+    id: health?.status === 'ok' && health?.services?.database === 'connected' ? 'system-ok' : 'system-warning',
+    title: health?.status === 'ok' && health?.services?.database === 'connected' ? 'System healthy' : 'System status needs attention',
+    detail: health?.status === 'ok' && health?.services?.database === 'connected'
+      ? 'API is responding and MongoDB is connected.'
+      : 'API or database health is not fully available.',
+    action: 'View status',
+    page: 'module-status',
+  });
+
+  return items;
 }
 
 function ThemeControls({ theme, resolvedTheme, onThemeChange }) {
@@ -296,7 +409,6 @@ function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUser
 
 function ModulePage({ pageId }) {
   const details = pageDetails[pageId];
-  const item = findNavItem(pageId);
 
   return (
     <section className="module-page">
@@ -305,7 +417,7 @@ function ModulePage({ pageId }) {
           <p className="eyebrow">{details.eyebrow}</p>
           <h2>{details.title}</h2>
         </div>
-        <span className="status-pill">{item?.status || 'Planned'}</span>
+        <span className="status-pill">{details.state || 'Planned'}</span>
       </div>
 
       <p className="module-description">{details.description}</p>
@@ -329,6 +441,9 @@ export default function App() {
   const [checkingSession, setCheckingSession] = useState(Boolean(token));
   const [activePage, setActivePage] = useState('dashboard');
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+  const [notificationDashboard, setNotificationDashboard] = useState(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem(SIDEBAR_KEY) === 'true');
   const [theme, setTheme] = useState(localStorage.getItem(THEME_KEY) || 'system');
   const [resolvedTheme, setResolvedTheme] = useState(
     (localStorage.getItem(THEME_KEY) || 'system') === 'system' ? getSystemTheme() : localStorage.getItem(THEME_KEY),
@@ -343,6 +458,7 @@ export default function App() {
   useEffect(() => {
     if (!token) {
       setUser(null);
+      setNotificationDashboard(null);
       setCheckingSession(false);
       return;
     }
@@ -357,6 +473,14 @@ export default function App() {
       })
       .finally(() => setCheckingSession(false));
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    getDashboard(token)
+      .then(setNotificationDashboard)
+      .catch(() => setNotificationDashboard(null));
+  }, [token, dashboardRefreshKey]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -376,6 +500,10 @@ export default function App() {
     localStorage.setItem(THEME_KEY, theme);
   }, [theme, resolvedTheme]);
 
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_KEY, String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
   const handleLogin = (newToken, loggedInUser) => {
     localStorage.setItem(STORAGE_KEY, newToken);
     setUser(loggedInUser);
@@ -390,8 +518,9 @@ export default function App() {
   };
 
   const activeItem = findNavItem(activePage);
+  const notifications = buildNotifications(notificationDashboard, health);
   const currentPage = activePage === 'dashboard'
-    ? <Dashboard token={token} health={health} refreshKey={dashboardRefreshKey} />
+    ? <Dashboard token={token} refreshKey={dashboardRefreshKey} onNavigate={setActivePage} />
     : activePage === 'command-center'
       ? <CommandCenter token={token} onCommandSaved={() => setDashboardRefreshKey((key) => key + 1)} />
     : activePage === 'settings'
@@ -405,6 +534,8 @@ export default function App() {
           onUserChange={setUser}
         />
       )
+    : activePage === 'module-status'
+      ? <ModuleStatus token={token} health={health} refreshKey={dashboardRefreshKey} />
       : activePage === 'life-log'
         ? <LifeLog token={token} onEntriesChanged={() => setDashboardRefreshKey((key) => key + 1)} />
       : activePage === 'tasks'
@@ -435,31 +566,53 @@ export default function App() {
           </div>
         </div>
       ) : token ? (
-        <div className="app-shell">
+        <div className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}>
           <aside className="sidebar">
             <div className="brand-block">
               <div className="brand-mark">JD</div>
-              <div>
+              <div className="brand-copy">
                 <h1>JDHub</h1>
                 <p>Private command center</p>
               </div>
+              <button
+                aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                className="sidebar-toggle"
+                onClick={() => setSidebarCollapsed((current) => !current)}
+                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                type="button"
+              >
+                {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+              </button>
             </div>
 
             <nav className="sidebar-nav" aria-label="Main navigation">
               {navGroups.map((group) => (
                 <div className="nav-group" key={group.label}>
                   <p className="nav-label">{group.label}</p>
-                  {group.items.map((item) => (
-                    <button
-                      className={item.id === activePage ? 'nav-item active' : 'nav-item'}
-                      key={item.id}
-                      onClick={() => setActivePage(item.id)}
-                      type="button"
-                    >
-                      <span>{item.label}</span>
-                      <small>{item.status}</small>
-                    </button>
-                  ))}
+                  {group.items.map((item) => {
+                    const Icon = navIcons[item.id] || FileText;
+
+                    return (
+                      <button
+                        aria-label={item.label}
+                        className={[
+                          'nav-item',
+                          item.id === activePage ? 'active' : '',
+                          item.disabled ? 'disabled' : '',
+                        ].filter(Boolean).join(' ')}
+                        disabled={item.disabled}
+                        key={item.id}
+                        onClick={() => {
+                          if (!item.disabled) setActivePage(item.id);
+                        }}
+                        title={sidebarCollapsed ? item.label : undefined}
+                        type="button"
+                      >
+                        <Icon aria-hidden="true" className="nav-icon" size={18} />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               ))}
             </nav>
@@ -474,13 +627,57 @@ export default function App() {
 
               <div className="command-preview">
                 <input
-                  aria-label="Command Center placeholder"
+                  aria-label="Command Center example"
                   disabled
-                  placeholder="Command Center placeholder: add note: today I fixed nginx"
+                  placeholder="Command Center: add note: today I fixed nginx"
                 />
               </div>
 
               <div className="user-area">
+                <div className="notification-popover">
+                  <button
+                    aria-label="Notifications"
+                    className="notification-bell"
+                    onClick={() => setNotificationsOpen((current) => !current)}
+                    title="Notifications"
+                    type="button"
+                  >
+                    <Bell size={18} />
+                    {notifications.length > 0 && <span>{notifications.length}</span>}
+                  </button>
+                  {notificationsOpen && (
+                    <div className="notification-menu">
+                      <div className="notification-menu-header">
+                        <strong>Notifications</strong>
+                        <small>{notifications.length} active</small>
+                      </div>
+                      {notifications.length === 0 ? (
+                        <p className="muted">No active notifications.</p>
+                      ) : (
+                        <div className="notification-menu-list">
+                          {notifications.slice(0, 6).map((item) => (
+                            <article className="notification-menu-item" key={item.id}>
+                              <div>
+                                <strong>{item.title}</strong>
+                                <p>{item.detail}</p>
+                              </div>
+                              <button
+                                className="secondary-button"
+                                onClick={() => {
+                                  setActivePage(item.page);
+                                  setNotificationsOpen(false);
+                                }}
+                                type="button"
+                              >
+                                {item.action}
+                              </button>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <button
                   className="icon-button"
                   onClick={() => setTheme(getNextThemeMode(theme))}

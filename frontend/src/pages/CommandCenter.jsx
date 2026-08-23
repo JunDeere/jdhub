@@ -6,19 +6,25 @@ import {
   previewCommand,
 } from '../api/commands.js';
 import { globalSearch } from '../api/search.js';
+import { formatLocalDateTime } from '../utils/dateTime.js';
 
 const examples = [
-  'add note: today I fixed nginx',
-  'create task: review server backups',
-  'log expense: 250 food lunch cash',
+  {
+    label: 'Add note',
+    command: 'add note: today I fixed nginx',
+    hint: 'Saves a note after preview',
+  },
+  {
+    label: 'Create task',
+    command: 'create task: review server backups',
+    hint: 'Creates a todo task',
+  },
+  {
+    label: 'Log expense',
+    command: 'log expense: 250 food lunch cash',
+    hint: 'Adds a finance expense',
+  },
 ];
-
-function formatDate(value) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value));
-}
 
 function tagsToText(tags) {
   return Array.isArray(tags) ? tags.join(', ') : '';
@@ -29,7 +35,7 @@ function textToTags(value) {
 }
 
 function actionLabel(actionType) {
-  if (actionType === 'create_life_log') return 'Create Life Log entry';
+  if (actionType === 'create_life_log') return 'Create note';
   if (actionType === 'create_task') return 'Create task';
   if (actionType === 'create_transaction') return 'Log expense transaction';
   return 'Unknown action';
@@ -302,14 +308,14 @@ export default function CommandCenter({ token, onCommandSaved }) {
     <section className="command-center-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 10 MVP</p>
+          <p className="eyebrow">Rule-based actions</p>
           <h2>Command Center</h2>
         </div>
         <span className="status-pill">{history.length} recent commands</span>
       </div>
 
       <p className="module-description">
-        Use rule-based commands to create records after preview. Supported prefixes are add note:, create task:, and log expense:.
+        Pick a command chip or type a supported prefix. JDHub always previews the record before saving.
       </p>
 
       <div className="command-layout">
@@ -333,8 +339,10 @@ export default function CommandCenter({ token, onCommandSaved }) {
 
             <div className="example-row">
               {examples.map((example) => (
-                <button className="secondary-button" key={example} onClick={() => setRawText(example)} type="button">
-                  {example}
+                <button className="command-chip" key={example.command} onClick={() => setRawText(example.command)} type="button">
+                  <strong>{example.label}</strong>
+                  <span>{example.command}</span>
+                  <small>{example.hint}</small>
                 </button>
               ))}
             </div>
@@ -406,7 +414,7 @@ export default function CommandCenter({ token, onCommandSaved }) {
             {searchData && (
               <div className="search-results">
                 <div className="alert-success">{searchData.summary.text}</div>
-                {renderSearchGroup('Life Log', searchData.results.entries)}
+                {renderSearchGroup('Notes', searchData.results.entries)}
                 {renderSearchGroup('Knowledge Base', searchData.results.knowledge)}
                 {renderSearchGroup('Tasks', searchData.results.tasks)}
                 {renderSearchGroup('Projects', searchData.results.projects)}
@@ -432,7 +440,7 @@ export default function CommandCenter({ token, onCommandSaved }) {
                       </div>
                       <span className="status-pill">{message.status}</span>
                     </div>
-                    <p>{formatDate(message.createdAt)}</p>
+                    <p>{formatLocalDateTime(message.createdAt)}</p>
                     {message.saved_record_type && (
                       <div className="task-detail-row">
                         <span>Saved as {message.saved_record_type}</span>

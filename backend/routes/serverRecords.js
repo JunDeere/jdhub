@@ -1,6 +1,7 @@
 const express = require('express');
 const ServerRecord = require('../models/ServerRecord');
 const authMiddleware = require('../middleware/auth');
+const { nowUtc, parseOptionalUtcDate } = require('../utils/dateTime');
 
 const router = express.Router();
 
@@ -11,12 +12,6 @@ function normalizeTags(tags) {
   if (Array.isArray(tags)) return tags.map((tag) => String(tag).trim()).filter(Boolean);
   if (typeof tags === 'string') return tags.split(',').map((tag) => tag.trim()).filter(Boolean);
   return [];
-}
-
-function parseDate(value) {
-  if (!value) return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 function parsePort(value) {
@@ -35,7 +30,7 @@ function recordPayload(body) {
     service: typeof body.service === 'string' ? body.service.trim() : '',
     environment: typeof body.environment === 'string' ? body.environment.trim() : '',
     notes: typeof body.notes === 'string' ? body.notes.trim() : '',
-    occurred_at: parseDate(body.occurred_at),
+    occurred_at: parseOptionalUtcDate(body.occurred_at),
     tags: normalizeTags(body.tags),
   };
 }
@@ -95,7 +90,7 @@ router.patch('/:id/archive', async (req, res) => {
   try {
     const record = await ServerRecord.findOneAndUpdate(
       { _id: req.params.id, user_id: req.userId },
-      { archived_at: new Date() },
+      { archived_at: nowUtc() },
       { returnDocument: 'after' },
     );
 

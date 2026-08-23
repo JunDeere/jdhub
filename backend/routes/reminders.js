@@ -1,6 +1,7 @@
 const express = require('express');
 const Reminder = require('../models/Reminder');
 const authMiddleware = require('../middleware/auth');
+const { nowUtc, parseRequiredUtcDate } = require('../utils/dateTime');
 
 const router = express.Router();
 const statuses = ['pending', 'completed', 'snoozed', 'cancelled'];
@@ -11,16 +12,11 @@ function normalizeTags(tags) {
   return [];
 }
 
-function parseDate(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function reminderPayload(body) {
   return {
     title: typeof body.title === 'string' ? body.title.trim() : '',
     description: typeof body.description === 'string' ? body.description.trim() : '',
-    remind_at: parseDate(body.remind_at),
+    remind_at: parseRequiredUtcDate(body.remind_at),
     status: statuses.includes(body.status) ? body.status : 'pending',
     tags: normalizeTags(body.tags),
   };
@@ -64,7 +60,7 @@ router.patch('/:id', async (req, res) => {
     if (!payload.title || !payload.remind_at) {
       return res.status(400).json({ error: 'Title and reminder time are required' });
     }
-    payload.completed_at = payload.status === 'completed' ? new Date() : undefined;
+    payload.completed_at = payload.status === 'completed' ? nowUtc() : undefined;
 
     const reminder = await Reminder.findOneAndUpdate(
       { _id: req.params.id, user_id: req.userId },
@@ -83,7 +79,7 @@ router.patch('/:id/complete', async (req, res) => {
   try {
     const reminder = await Reminder.findOneAndUpdate(
       { _id: req.params.id, user_id: req.userId },
-      { status: 'completed', completed_at: new Date() },
+      { status: 'completed', completed_at: nowUtc() },
       { returnDocument: 'after' },
     );
     if (!reminder) return res.status(404).json({ error: 'Reminder not found' });

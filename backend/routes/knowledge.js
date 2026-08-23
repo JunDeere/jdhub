@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Entry = require('../models/Entry');
 const authMiddleware = require('../middleware/auth');
+const { nowUtc } = require('../utils/dateTime');
 
 const router = express.Router();
 
@@ -114,7 +115,7 @@ router.patch('/:id/archive', async (req, res) => {
   try {
     const page = await Entry.findOneAndUpdate(
       { _id: req.params.id, user_id: req.userId, type: 'knowledge_page' },
-      { archived_at: new Date() },
+      { archived_at: nowUtc() },
       { returnDocument: 'after' },
     );
 

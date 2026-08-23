@@ -6,6 +6,8 @@ This document keeps the work focused week by week.
 
 The goal is to avoid jumping into every feature at once.
 
+Ongoing implementation history is tracked in `docs/11-progress-log.md`.
+
 ## Sprint Rule
 
 Each week should have:
@@ -346,7 +348,132 @@ User can document server/integration setup manually.
 
 ## Backlog After Week 12
 
-Future work:
+MVP 1 foundation is complete through Week 12.
+
+### Completed MVP 1 Scope
+
+- Project foundation
+- MongoDB and auth
+- Dashboard and layout
+- Life Log
+- Tasks
+- Finance transactions
+- Scheduling and reminders
+- Projects
+- Knowledge Base
+- Command Center
+- Search and summaries
+- Server Manager
+- Integrations placeholder
+
+### Current App State
+
+JDHub is deployable through Docker Compose and usable as a private owner/developer MVP.
+
+It still needs a usability and production-readiness pass before it is suitable for users who have no project context.
+
+---
+
+## MVP 2 - Usability and Production Readiness
+
+### Goal
+
+Make JDHub easier to understand, safer to deploy, and more reliable for daily use.
+
+### Workstreams
+
+- Usability
+- User/admin basics
+- Data management
+- Production readiness
+- Quality
+
+### Done When
+
+A new user can sign in, understand what to do next, create records without explanation, and the owner can deploy, back up, and maintain JDHub with documented steps.
+
+### Avoid
+
+- Do not add AI yet.
+- Do not add external integrations yet.
+- Do not build more modules before the existing MVP is clearer and safer.
+
+---
+
+## MVP 2 - Usability
+
+### Tasks
+
+- Add onboarding checklist on Dashboard
+- Add empty-state actions for core modules
+- Hide or disable planned modules until implemented
+- Improve Command Center examples and command chips
+- Add first-run sample prompts without fake data
+- Add clear module descriptions and "what to do next" copy
+- Improve form validation and friendlier errors
+- Add success toasts or consistent inline confirmations
+- Improve loading states and disabled buttons during saves
+
+---
+
+## MVP 2 - User/Admin Basics
+
+### Tasks
+
+- Add account profile completion prompt
+- Add user role field: owner, admin, member
+- Make Module Status and system settings admin-only where appropriate
+- Add password change
+- Add optional invite-only registration
+- Improve logout/session expiry behavior
+
+---
+
+## MVP 2 - Data Management
+
+### Tasks
+
+- Export data as JSON/CSV
+- Import basic CSV for transactions/tasks
+- Add archive views for tasks, projects, logs, and knowledge pages
+- Add soft-delete restore flow
+- Add basic backup script or documented backup command
+- Add data retention notes
+
+---
+
+## MVP 2 - Production Readiness
+
+### Tasks
+
+- Add production `.env.example`
+- Add strong JWT secret guidance
+- Add Docker Compose production override
+- Add HTTPS / reverse proxy notes
+- Confirm MongoDB persistent volume behavior
+- Add rate limiting for auth routes
+- Add Helmet/security headers
+- Configure CORS by environment
+- Add healthchecks in Docker Compose
+- Add basic server deployment guide
+
+---
+
+## MVP 2 - Quality
+
+### Tasks
+
+- Add API smoke tests
+- Add frontend form behavior tests
+- Add seed/demo data script
+- Fix current ESLint issues
+- Add README setup instructions matching the real app
+
+---
+
+## Later Backlog
+
+Future work after MVP 2:
 
 - Receipts MVP
 - File uploads

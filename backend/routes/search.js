@@ -21,7 +21,7 @@ function resultSummary(results) {
   const total = Object.values(results).reduce((sum, items) => sum + items.length, 0);
   const parts = [];
 
-  if (results.entries.length) parts.push(`${results.entries.length} life logs`);
+  if (results.entries.length) parts.push(`${results.entries.length} notes`);
   if (results.knowledge.length) parts.push(`${results.knowledge.length} knowledge pages`);
   if (results.tasks.length) parts.push(`${results.tasks.length} tasks`);
   if (results.projects.length) parts.push(`${results.projects.length} projects`);

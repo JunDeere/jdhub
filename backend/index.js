@@ -134,7 +134,7 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
       upcomingReminders,
       upcomingSchedule,
       sections: {
-        lifeLog: recentEntries.length ? `${recentEntries.length} recent entries` : 'Ready for entries',
+        lifeLog: recentEntries.length ? `${recentEntries.length} recent notes` : 'Ready for notes',
         tasks: openTasks.length ? `${openTasks.length} open tasks` : 'Ready for tasks',
         finance: financeSummary.income || financeSummary.expense ? `Net ${financeSummary.net}` : 'Ready for transactions',
         projects: activeProjects.length ? `${activeProjects.length} active projects` : 'Ready for projects',

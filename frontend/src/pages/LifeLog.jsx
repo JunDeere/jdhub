@@ -1,33 +1,65 @@
-import { useEffect, useState } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { archiveEntry, createEntry, getEntries, updateEntry } from '../api/entries.js';
-import { getProjects } from '../api/projects.js';
 
-const categories = ['Personal', 'Work', 'Coding', 'Server', 'Health', 'Money', 'Idea', 'Incident', 'Learning'];
+function newDraftTab() {
+  return {
+    tabId: `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    entryId: null,
+    content: '',
+    category: 'Note',
+    tags: 'notes',
+    dirty: false,
+  };
+}
 
-const emptyForm = {
-  title: '',
-  content: '',
-  category: 'Personal',
-  related_project_id: '',
-  tags: '',
-};
+function firstLineTitle(content) {
+  const firstLine = String(content || '').split(/\r?\n/)[0] || '';
+  return firstLine.trim();
+}
 
-function formatDate(value) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value));
+function tabLabel(tab) {
+  return firstLineTitle(tab.content) || 'Untitled';
+}
+
+function payloadFromTab(tab) {
+  return {
+    title: firstLineTitle(tab.content) || 'Untitled note',
+    content: tab.content,
+    category: tab.category || 'Note',
+    related_project_id: null,
+    tags: String(tab.tags || 'notes')
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean),
+  };
+}
+
+function tabFromEntry(entry) {
+  return {
+    tabId: entry._id,
+    entryId: entry._id,
+    content: entry.content || '',
+    category: entry.category || 'Note',
+    tags: (entry.tags || []).join(', ') || 'notes',
+    dirty: false,
+  };
 }
 
 export default function LifeLog({ token, onEntriesChanged }) {
-  const [entries, setEntries] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [form, setForm] = useState(emptyForm);
-  const [editingId, setEditingId] = useState(null);
+  const [tabs, setTabs] = useState([newDraftTab()]);
+  const [activeTabId, setActiveTabId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState(null);
+
+  const activeTab = useMemo(
+    () => tabs.find((tab) => tab.tabId === activeTabId) || tabs[0] || null,
+    [tabs, activeTabId],
+  );
+
+  const savedCount = tabs.filter((tab) => tab.entryId).length;
 
   const loadEntries = async () => {
     setLoading(true);
@@ -35,7 +67,22 @@ export default function LifeLog({ token, onEntriesChanged }) {
 
     try {
       const data = await getEntries(token);
-      setEntries(data.entries);
+      const savedTabs = (data.entries || []).map(tabFromEntry);
+
+      setTabs((currentTabs) => {
+        const localDrafts = currentTabs.filter((tab) => !tab.entryId);
+        const editedSavedTabs = currentTabs.filter((tab) => tab.entryId && tab.dirty);
+        const editedIds = new Set(editedSavedTabs.map((tab) => tab.entryId));
+        const mergedSavedTabs = savedTabs.map((tab) => (
+          editedIds.has(tab.entryId)
+            ? editedSavedTabs.find((edited) => edited.entryId === tab.entryId)
+            : tab
+        ));
+        const nextTabs = [...localDrafts, ...mergedSavedTabs];
+        return nextTabs.length ? nextTabs : [newDraftTab()];
+      });
+
+      setActiveTabId((currentId) => currentId || null);
       onEntriesChanged?.();
     } catch (err) {
       setError(err.message);
@@ -44,52 +91,96 @@ export default function LifeLog({ token, onEntriesChanged }) {
     }
   };
 
-  const loadProjects = async () => {
-    try {
-      const data = await getProjects(token);
-      setProjects(data.projects);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
   useEffect(() => {
     loadEntries();
-    loadProjects();
   }, [token]);
 
-  const updateForm = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }));
+  useEffect(() => {
+    if (!activeTabId && tabs.length) {
+      setActiveTabId(tabs[0].tabId);
+    }
+  }, [activeTabId, tabs]);
+
+  useEffect(() => {
+    if (!activeTab?.dirty || loading) return undefined;
+    if (!activeTab.entryId && !activeTab.content.trim()) return undefined;
+
+    const saveTimer = window.setTimeout(async () => {
+      setSaving(true);
+      setError(null);
+
+      try {
+        const payload = payloadFromTab(activeTab);
+
+        if (activeTab.entryId) {
+          await updateEntry(token, activeTab.entryId, payload);
+          setTabs((currentTabs) => currentTabs.map((tab) => (
+            tab.tabId === activeTab.tabId ? { ...tab, ...payload, dirty: false } : tab
+          )));
+        } else {
+          const data = await createEntry(token, payload);
+          const entry = data.entry;
+          if (entry?._id) {
+            setTabs((currentTabs) => currentTabs.map((tab) => (
+              tab.tabId === activeTab.tabId
+                ? { ...tabFromEntry(entry), content: payload.content }
+                : tab
+            )));
+            setActiveTabId(entry._id);
+          }
+        }
+
+        setStatus('Autosaved.');
+        onEntriesChanged?.();
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setSaving(false);
+      }
+    }, 800);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [activeTab, loading, onEntriesChanged, token]);
+
+  const startNewNote = () => {
+    const draftTab = newDraftTab();
+    setTabs((currentTabs) => [draftTab, ...currentTabs]);
+    setActiveTabId(draftTab.tabId);
+    setStatus(null);
+    setError(null);
   };
 
-  const resetForm = () => {
-    setForm(emptyForm);
-    setEditingId(null);
+  const updateActiveContent = (content) => {
+    if (!activeTab) return;
+
+    setTabs((currentTabs) => currentTabs.map((tab) => (
+      tab.tabId === activeTab.tabId ? { ...tab, content, dirty: true } : tab
+    )));
+    setStatus(null);
+    setError(null);
   };
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setSaving(true);
+  const handleClear = async () => {
+    if (!activeTab) return;
     setError(null);
     setStatus(null);
 
+    if (!activeTab.entryId) {
+      setTabs((currentTabs) => currentTabs.map((tab) => (
+        tab.tabId === activeTab.tabId ? { ...tab, content: '', dirty: false } : tab
+      )));
+      return;
+    }
+
+    setSaving(true);
     try {
-      const payload = {
-        ...form,
-        related_project_id: form.related_project_id || null,
-        tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-      };
-
-      if (editingId) {
-        await updateEntry(token, editingId, payload);
-        setStatus('Entry updated.');
-      } else {
-        await createEntry(token, payload);
-        setStatus('Entry saved.');
-      }
-
-      resetForm();
-      await loadEntries();
+      const clearedTab = { ...activeTab, content: '', dirty: false };
+      await updateEntry(token, activeTab.entryId, payloadFromTab(clearedTab));
+      setTabs((currentTabs) => currentTabs.map((tab) => (
+        tab.tabId === activeTab.tabId ? clearedTab : tab
+      )));
+      setStatus('Cleared.');
+      onEntriesChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -97,174 +188,108 @@ export default function LifeLog({ token, onEntriesChanged }) {
     }
   };
 
-  const handleEdit = (entry) => {
-    setEditingId(entry._id);
-    setForm({
-      title: entry.title || '',
-      content: entry.content || '',
-      category: entry.category || 'Personal',
-      related_project_id: typeof entry.related_project_id === 'object'
-        ? entry.related_project_id?._id || ''
-        : entry.related_project_id || '',
-      tags: (entry.tags || []).join(', '),
-    });
-    setStatus(null);
-    setError(null);
-  };
+  const handleArchive = async (tab) => {
+    if (!tab.entryId) {
+      setTabs((currentTabs) => {
+        const nextTabs = currentTabs.filter((item) => item.tabId !== tab.tabId);
+        return nextTabs.length ? nextTabs : [newDraftTab()];
+      });
+      setActiveTabId((currentId) => (currentId === tab.tabId ? null : currentId));
+      return;
+    }
 
-  const handleArchive = async (entry) => {
+    setSaving(true);
     setError(null);
     setStatus(null);
 
     try {
-      await archiveEntry(token, entry._id);
-      setStatus('Entry archived.');
-      if (editingId === entry._id) resetForm();
-      await loadEntries();
+      await archiveEntry(token, tab.entryId);
+      setTabs((currentTabs) => {
+        const nextTabs = currentTabs.filter((item) => item.tabId !== tab.tabId);
+        return nextTabs.length ? nextTabs : [newDraftTab()];
+      });
+      setActiveTabId((currentId) => (currentId === tab.tabId ? null : currentId));
+      setStatus('Archived.');
+      onEntriesChanged?.();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <section className="life-log-page">
+    <section className="notes-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 4 MVP</p>
-          <h2>Life Log</h2>
+          <p className="eyebrow">Notepad</p>
+          <h2>Notes</h2>
         </div>
-        <span className="status-pill">{entries.length} active entries</span>
+        <span className="status-pill">{saving ? 'Autosaving...' : `${savedCount} saved notes`}</span>
       </div>
 
-      <p className="module-description">
-        Store notes, incidents, technical fixes, ideas, health notes, and learning records. Attachments, AI summaries, and search come later.
-      </p>
+      <div className="notepad-shell">
+        <div className="notepad-tabs" aria-label="Open notes">
+          {tabs.map((tab) => {
+            const label = tabLabel(tab);
 
-      <div className="life-log-layout">
-        <form className="panel entry-form" onSubmit={handleSubmit}>
-          <div className="control-row">
-            <div>
-              <h3>{editingId ? 'Edit Entry' : 'Add Entry'}</h3>
-              <p className="muted">Use tags separated by commas.</p>
-            </div>
-            {editingId && (
-              <button className="secondary-button" onClick={resetForm} type="button">
-                Cancel edit
+            return (
+              <button
+                className={tab.tabId === activeTab?.tabId ? 'note-tab active' : 'note-tab'}
+                key={tab.tabId}
+                onClick={() => setActiveTabId(tab.tabId)}
+                title={label}
+                type="button"
+              >
+                <span className="note-tab-title">{label}</span>
+              </button>
+            );
+          })}
+
+          <button
+            aria-label="New note"
+            className="note-tab-add"
+            onClick={startNewNote}
+            title="New note"
+            type="button"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+
+        <div className="notepad-toolbar">
+          <div>
+            <strong>{activeTab?.entryId ? 'Saved note' : 'New note'}</strong>
+            <span>{loading ? 'Loading notes...' : 'Autosaves after typing. Empty new tabs stay local until they have content.'}</span>
+          </div>
+          <div className="notepad-actions">
+            <button className="secondary-button" disabled={saving} onClick={handleClear} type="button">
+              <Trash2 size={16} />
+              Clear
+            </button>
+            {activeTab?.entryId && (
+              <button className="secondary-button danger-button" disabled={saving} onClick={() => handleArchive(activeTab)} type="button">
+                Archive
               </button>
             )}
           </div>
-
-          <label>
-            Title
-            <input
-              value={form.title}
-              onChange={(event) => updateForm('title', event.target.value)}
-              placeholder="Blackout broke Acer server access"
-              required
-            />
-          </label>
-
-          <label>
-            Content
-            <textarea
-              value={form.content}
-              onChange={(event) => updateForm('content', event.target.value)}
-              placeholder="Write the details here..."
-              required
-              rows={8}
-            />
-          </label>
-
-          <div className="form-grid two">
-            <label>
-              Category
-              <select value={form.category} onChange={(event) => updateForm('category', event.target.value)}>
-                {categories.map((category) => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Tags
-              <input
-                value={form.tags}
-                onChange={(event) => updateForm('tags', event.target.value)}
-                placeholder="nginx, blackout, docker"
-              />
-            </label>
-
-            <label>
-              Project
-              <select
-                value={form.related_project_id}
-                onChange={(event) => updateForm('related_project_id', event.target.value)}
-              >
-                <option value="">No project</option>
-                {projects.map((project) => (
-                  <option key={project._id} value={project._id}>{project.name}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {error && <div className="alert-error">{error}</div>}
-          {status && <div className="alert-success">{status}</div>}
-
-          <button className="primary-button" disabled={saving} type="submit">
-            {saving ? 'Saving...' : editingId ? 'Update entry' : 'Save entry'}
-          </button>
-        </form>
-
-        <div className="entry-list">
-          <div className="panel">
-            <h3>Recent Entries</h3>
-            {loading ? (
-              <p className="muted">Loading entries...</p>
-            ) : entries.length === 0 ? (
-              <p className="muted">No Life Log entries yet.</p>
-            ) : (
-              <div className="entry-stack">
-                {entries.map((entry) => (
-                  <article className="entry-card" key={entry._id}>
-                    <div className="entry-card-header">
-                      <div>
-                        <span className="entry-category">{entry.category}</span>
-                        <h4>{entry.title}</h4>
-                      </div>
-                      <span className="entry-date">{formatDate(entry.createdAt)}</span>
-                    </div>
-
-                    <p>{entry.content}</p>
-
-                    {entry.related_project_id?.name && (
-                      <div className="task-detail-row">
-                        <span>Project: {entry.related_project_id.name}</span>
-                      </div>
-                    )}
-
-                    {entry.tags?.length > 0 && (
-                      <div className="tag-row">
-                        {entry.tags.map((tag) => (
-                          <span key={tag}>{tag}</span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="entry-actions">
-                      <button className="secondary-button" onClick={() => handleEdit(entry)} type="button">
-                        Edit
-                      </button>
-                      <button className="secondary-button danger-button" onClick={() => handleArchive(entry)} type="button">
-                        Archive
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
+
+        <textarea
+          aria-label="Note content"
+          className="notepad-editor"
+          onChange={(event) => updateActiveContent(event.target.value)}
+          placeholder="Start typing..."
+          spellCheck="true"
+          value={activeTab?.content || ''}
+        />
+
+        {(error || status) && (
+          <div className="notepad-status">
+            {error && <div className="alert-error">{error}</div>}
+            {status && <div className="alert-success">{status}</div>}
+          </div>
+        )}
       </div>
     </section>
   );

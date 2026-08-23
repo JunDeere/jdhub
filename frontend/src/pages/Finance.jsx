@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createTransaction, getTransactions, updateTransaction } from '../api/transactions.js';
+import { dateInputToUtcIso, formatLocalDate, toUtcDateInput } from '../utils/dateTime.js';
 
 const transactionTypes = ['expense', 'income', 'transfer'];
 const categories = ['Food', 'Transport', 'Bills', 'Utilities', 'Health', 'Work', 'Server', 'Shopping', 'Savings', 'Other'];
@@ -10,7 +11,7 @@ const emptyForm = {
   amount: '',
   currency: 'PHP',
   category: 'Food',
-  date: new Date().toISOString().slice(0, 10),
+  date: toUtcDateInput(new Date()),
   merchant_or_source: '',
   payment_method: 'Cash',
   note: '',
@@ -23,10 +24,6 @@ function money(value, currency = 'PHP') {
     currency,
     maximumFractionDigits: 2,
   }).format(Number(value || 0));
-}
-
-function formatDate(value) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value));
 }
 
 export default function Finance({ token, onTransactionsChanged }) {
@@ -78,6 +75,7 @@ export default function Finance({ token, onTransactionsChanged }) {
       const payload = {
         ...form,
         amount: Number(form.amount),
+        date: dateInputToUtcIso(form.date),
         tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
       };
 
@@ -105,7 +103,7 @@ export default function Finance({ token, onTransactionsChanged }) {
       amount: String(transaction.amount || ''),
       currency: transaction.currency || 'PHP',
       category: transaction.category || 'Other',
-      date: transaction.date ? transaction.date.slice(0, 10) : emptyForm.date,
+      date: transaction.date ? toUtcDateInput(transaction.date) : emptyForm.date,
       merchant_or_source: transaction.merchant_or_source || '',
       payment_method: transaction.payment_method || 'Cash',
       note: transaction.note || '',
@@ -119,7 +117,7 @@ export default function Finance({ token, onTransactionsChanged }) {
     <section className="finance-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 6 MVP</p>
+          <p className="eyebrow">Manual finance</p>
           <h2>Finance</h2>
         </div>
         <span className="status-pill">{transactions.length} transactions</span>
@@ -274,7 +272,7 @@ export default function Finance({ token, onTransactionsChanged }) {
                       <strong>{money(transaction.amount, transaction.currency)}</strong>
                     </div>
 
-                    <p>{formatDate(transaction.date)} / {transaction.payment_method || 'No payment method'}</p>
+                    <p>{formatLocalDate(transaction.date)} / {transaction.payment_method || 'No payment method'}</p>
                     {transaction.note && <p>{transaction.note}</p>}
 
                     {transaction.tags?.length > 0 && (

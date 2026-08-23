@@ -4,7 +4,7 @@ const EntrySchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   type: { type: String, default: 'life_log', index: true },
   title: { type: String, required: true, trim: true },
-  content: { type: String, required: true, trim: true },
+  content: { type: String, default: '' },
   category: { type: String, default: 'Personal', trim: true, index: true },
   tags: [{ type: String, trim: true }],
   related_project_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },

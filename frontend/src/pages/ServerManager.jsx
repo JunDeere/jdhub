@@ -5,6 +5,7 @@ import {
   getServerRecords,
   updateServerRecord,
 } from '../api/serverRecords.js';
+import { formatLocalDateTime, localDateTimeInputToUtcIso, toLocalDateTimeInput } from '../utils/dateTime.js';
 
 const recordTypes = ['server_note', 'incident_log', 'container_record', 'port_record'];
 const statuses = ['active', 'planned', 'watching', 'resolved', 'inactive'];
@@ -24,11 +25,6 @@ const emptyForm = {
 
 function label(value) {
   return value.replaceAll('_', ' ');
-}
-
-function formatDate(value) {
-  if (!value) return 'No date';
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
 export default function ServerManager({ token, onServerRecordsChanged }) {
@@ -83,7 +79,7 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
       const payload = {
         ...form,
         port: form.port || null,
-        occurred_at: form.occurred_at || null,
+        occurred_at: localDateTimeInputToUtcIso(form.occurred_at),
         tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
       };
 
@@ -114,7 +110,7 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
       port: record.port ? String(record.port) : '',
       service: record.service || '',
       environment: record.environment || '',
-      occurred_at: record.occurred_at ? record.occurred_at.slice(0, 16) : '',
+      occurred_at: toLocalDateTimeInput(record.occurred_at),
       notes: record.notes || '',
       tags: (record.tags || []).join(', '),
     });
@@ -140,7 +136,7 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
     <section className="server-manager-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 12 MVP</p>
+          <p className="eyebrow">Infrastructure records</p>
           <h2>Server Manager</h2>
         </div>
         <span className="status-pill">{records.length} manual records</span>
@@ -262,7 +258,7 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
                       {record.host && <span>Host: {record.host}</span>}
                       {record.port && <span>Port: {record.port}</span>}
                       {record.service && <span>Service: {record.service}</span>}
-                      {record.occurred_at && <span>When: {formatDate(record.occurred_at)}</span>}
+                      {record.occurred_at && <span>When: {formatLocalDateTime(record.occurred_at)}</span>}
                     </div>
                     {record.notes && <p>{record.notes}</p>}
                     {record.tags?.length > 0 && (

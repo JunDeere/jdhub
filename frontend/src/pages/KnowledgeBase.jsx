@@ -6,6 +6,7 @@ import {
   updateKnowledgePage,
 } from '../api/knowledge.js';
 import { getProjects } from '../api/projects.js';
+import { formatLocalDateTime } from '../utils/dateTime.js';
 
 const emptyForm = {
   title: '',
@@ -13,13 +14,6 @@ const emptyForm = {
   related_project_id: '',
   tags: '',
 };
-
-function formatDate(value) {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value));
-}
 
 export default function KnowledgeBase({ token, onKnowledgeChanged }) {
   const [pages, setPages] = useState([]);
@@ -137,7 +131,7 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
     <section className="knowledge-base-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 9 MVP</p>
+          <p className="eyebrow">Personal documentation</p>
           <h2>Knowledge Base</h2>
         </div>
         <span className="status-pill">{pages.length} visible pages</span>
@@ -256,7 +250,7 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
                         <span className="entry-category">Knowledge</span>
                         <h4>{page.title}</h4>
                       </div>
-                      <span className="entry-date">{formatDate(page.updatedAt || page.createdAt)}</span>
+                      <span className="entry-date">{formatLocalDateTime(page.updatedAt || page.createdAt)}</span>
                     </div>
 
                     <p>{page.content}</p>

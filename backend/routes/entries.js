@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Entry = require('../models/Entry');
 const authMiddleware = require('../middleware/auth');
+const { nowUtc } = require('../utils/dateTime');
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ function parseObjectId(value) {
 function entryPayload(body) {
   return {
     title: typeof body.title === 'string' ? body.title.trim() : '',
-    content: typeof body.content === 'string' ? body.content.trim() : '',
+    content: typeof body.content === 'string' ? body.content : '',
     category: typeof body.category === 'string' && body.category.trim() ? body.category.trim() : 'Personal',
     related_project_id: parseObjectId(body.related_project_id),
     tags: normalizeTags(body.tags),
@@ -59,8 +60,8 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const payload = entryPayload(req.body);
-    if (!payload.title || !payload.content) {
-      return res.status(400).json({ error: 'Title and content are required' });
+    if (!payload.title) {
+      return res.status(400).json({ error: 'Title is required' });
     }
 
     const entry = await Entry.create({
@@ -78,8 +79,8 @@ router.post('/', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const payload = entryPayload(req.body);
-    if (!payload.title || !payload.content) {
-      return res.status(400).json({ error: 'Title and content are required' });
+    if (!payload.title) {
+      return res.status(400).json({ error: 'Title is required' });
     }
 
     const entry = await Entry.findOneAndUpdate(
@@ -100,7 +101,7 @@ router.patch('/:id/archive', async (req, res) => {
   try {
     const entry = await Entry.findOneAndUpdate(
       { _id: req.params.id, user_id: req.userId },
-      { archived_at: new Date() },
+      { archived_at: nowUtc() },
       { returnDocument: 'after' },
     );
 

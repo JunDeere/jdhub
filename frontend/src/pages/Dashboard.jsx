@@ -1,9 +1,9 @@
+import { Bell, ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getDashboard } from '../api/auth.js';
+import { formatLocalDate, formatLocalDateTime } from '../utils/dateTime.js';
 
-function formatDate(value, options = { dateStyle: 'medium', timeStyle: 'short' }) {
-  return new Intl.DateTimeFormat(undefined, options).format(new Date(value));
-}
+const ONBOARDING_KEY = 'jdhubDashboardOnboardingOpen';
 
 function money(value, currency = 'PHP') {
   return new Intl.NumberFormat(undefined, {
@@ -13,9 +13,21 @@ function money(value, currency = 'PHP') {
   }).format(Number(value || 0));
 }
 
-export default function Dashboard({ token, health, refreshKey }) {
+function EmptyState({ message, action, onAction }) {
+  return (
+    <div className="empty-state">
+      <p className="muted">{message}</p>
+      <button className="secondary-button" onClick={onAction} type="button">
+        {action}
+      </button>
+    </div>
+  );
+}
+
+export default function Dashboard({ token, refreshKey, onNavigate }) {
   const [dashboard, setDashboard] = useState(null);
   const [error, setError] = useState(null);
+  const [onboardingOpen, setOnboardingOpen] = useState(localStorage.getItem(ONBOARDING_KEY) === 'true');
 
   useEffect(() => {
     let active = true;
@@ -33,11 +45,50 @@ export default function Dashboard({ token, health, refreshKey }) {
     };
   }, [token, refreshKey]);
 
+  useEffect(() => {
+    localStorage.setItem(ONBOARDING_KEY, String(onboardingOpen));
+  }, [onboardingOpen]);
+
+  const onboardingItems = dashboard ? [
+    {
+      done: Boolean(dashboard.recentEntries?.length),
+      label: 'Write a note',
+      description: 'Use Notes like a quick notepad for thoughts, fixes, and incidents.',
+      page: 'life-log',
+    },
+    {
+      done: Boolean(dashboard.openTasks?.length),
+      label: 'Create a task',
+      description: 'Track the next action you want JDHub to remember.',
+      page: 'tasks',
+    },
+    {
+      done: Boolean(dashboard.activeProjects?.length),
+      label: 'Add a project',
+      description: 'Group builds, maintenance work, and ideas into project records.',
+      page: 'projects',
+    },
+    {
+      done: Boolean(dashboard.financeSummary?.income || dashboard.financeSummary?.expense),
+      label: 'Log a transaction',
+      description: 'Start tracking income, expenses, and monthly net totals.',
+      page: 'finance',
+    },
+    {
+      done: false,
+      label: 'Try Command Center',
+      description: 'Use guided command chips for notes, tasks, and expenses.',
+      page: 'command-center',
+    },
+  ] : [];
+
+  const completedOnboarding = onboardingItems.filter((item) => item.done).length;
+
   return (
     <section className="dashboard-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 5 active</p>
+          <p className="eyebrow">Overview</p>
           <h2>Dashboard</h2>
         </div>
         <span className="status-pill">Protected</span>
@@ -49,6 +100,30 @@ export default function Dashboard({ token, health, refreshKey }) {
         <p>Loading dashboard...</p>
       ) : (
         <>
+          <div className={onboardingOpen ? 'panel onboarding-panel open' : 'panel onboarding-panel'}>
+            <button
+              className="notification-toggle"
+              onClick={() => setOnboardingOpen((current) => !current)}
+              type="button"
+            >
+              <Bell size={17} />
+              <span>Getting started</span>
+              <small>{completedOnboarding}/{onboardingItems.length} done</small>
+              {onboardingOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+            </button>
+            {onboardingOpen && (
+              <div className="onboarding-list">
+                {onboardingItems.map((item, index) => (
+                  <button className="onboarding-item" key={item.label} onClick={() => onNavigate(item.page)} type="button">
+                    <span>{item.done ? 'Done' : index + 1}</span>
+                    <strong>{item.label}</strong>
+                    <small>{item.description}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="metric-grid">
             <div className="metric-card">
               <span>Monthly income</span>
@@ -84,28 +159,36 @@ export default function Dashboard({ token, health, refreshKey }) {
                   {dashboard.upcomingReminders.map((reminder) => (
                     <article key={reminder._id}>
                       <strong>{reminder.title}</strong>
-                      <span>{formatDate(reminder.remind_at)}</span>
+                      <span>{formatLocalDateTime(reminder.remind_at)}</span>
                     </article>
                   ))}
                 </div>
               ) : (
-                <p className="muted">No upcoming reminders.</p>
+                <EmptyState
+                  message="No upcoming reminders."
+                  action="Add reminder"
+                  onAction={() => onNavigate('reminders')}
+                />
               )}
             </div>
 
             <div className="panel">
-              <h3>Recent Life Log</h3>
+              <h3>Recent Notes</h3>
               {dashboard.recentEntries?.length ? (
                 <div className="compact-entry-list">
                   {dashboard.recentEntries.map((entry) => (
                     <article key={entry._id}>
                       <strong>{entry.title}</strong>
-                      <span>{entry.category} / {formatDate(entry.createdAt)}</span>
+                      <span>{entry.category} / {formatLocalDateTime(entry.createdAt)}</span>
                     </article>
                   ))}
                 </div>
               ) : (
-                <p className="muted">No Life Log entries yet.</p>
+                <EmptyState
+                  message="No notes yet."
+                  action="Write note"
+                  onAction={() => onNavigate('life-log')}
+                />
               )}
             </div>
 
@@ -118,14 +201,18 @@ export default function Dashboard({ token, health, refreshKey }) {
                       <strong>{task.title}</strong>
                       <span>
                         {task.priority} priority / {task.due_date
-                          ? formatDate(task.due_date, { dateStyle: 'medium' })
+                          ? formatLocalDate(task.due_date)
                           : 'No due date'}
                       </span>
                     </article>
                   ))}
                 </div>
               ) : (
-                <p className="muted">No open tasks yet.</p>
+                <EmptyState
+                  message="No open tasks yet."
+                  action="Create task"
+                  onAction={() => onNavigate('tasks')}
+                />
               )}
             </div>
 
@@ -136,12 +223,16 @@ export default function Dashboard({ token, health, refreshKey }) {
                   {dashboard.upcomingSchedule.map((item) => (
                     <article key={item._id}>
                       <strong>{item.title}</strong>
-                      <span>{formatDate(item.start_at)}</span>
+                      <span>{formatLocalDateTime(item.start_at)}</span>
                     </article>
                   ))}
                 </div>
               ) : (
-                <p className="muted">No upcoming schedule items.</p>
+                <EmptyState
+                  message="No upcoming schedule items."
+                  action="Add schedule"
+                  onAction={() => onNavigate('scheduling')}
+                />
               )}
             </div>
 
@@ -157,7 +248,11 @@ export default function Dashboard({ token, health, refreshKey }) {
                   ))}
                 </div>
               ) : (
-                <p className="muted">No active projects yet.</p>
+                <EmptyState
+                  message="No active projects yet."
+                  action="Create project"
+                  onAction={() => onNavigate('projects')}
+                />
               )}
             </div>
 
@@ -168,26 +263,18 @@ export default function Dashboard({ token, health, refreshKey }) {
                   {dashboard.recentKnowledgePages.map((page) => (
                     <article key={page._id}>
                       <strong>{page.title}</strong>
-                      <span>{formatDate(page.updatedAt || page.createdAt)}</span>
+                      <span>{formatLocalDateTime(page.updatedAt || page.createdAt)}</span>
                     </article>
                   ))}
                 </div>
               ) : (
-                <p className="muted">No knowledge pages yet.</p>
+                <EmptyState
+                  message="No knowledge pages yet."
+                  action="Create page"
+                  onAction={() => onNavigate('knowledge-base')}
+                />
               )}
             </div>
-          </div>
-
-          <div className="panel">
-            <h3>Module Status</h3>
-            <ul className="plain-list">
-              {Object.entries(dashboard.sections || {}).map(([key, value]) => (
-                <li key={key}>
-                  <span>{key}</span>
-                  <strong>{value}</strong>
-                </li>
-              ))}
-            </ul>
           </div>
         </>
       )}

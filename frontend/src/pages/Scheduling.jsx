@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createScheduleItem, getSchedule, updateScheduleItem } from '../api/schedule.js';
+import { formatLocalDateTime, localDateTimeInputToUtcIso, localTimeZone, toLocalDateTimeInput } from '../utils/dateTime.js';
 
 const emptyForm = {
   title: '',
@@ -9,17 +10,6 @@ const emptyForm = {
   location: '',
   status: 'scheduled',
 };
-
-function toLocalInput(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 16);
-}
-
-function formatDate(value) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
-}
 
 export default function Scheduling({ token, onScheduleChanged }) {
   const [scheduleItems, setScheduleItems] = useState([]);
@@ -60,11 +50,17 @@ export default function Scheduling({ token, onScheduleChanged }) {
     setError(null);
     setStatusMessage(null);
     try {
+      const payload = {
+        ...form,
+        start_at: localDateTimeInputToUtcIso(form.start_at),
+        end_at: localDateTimeInputToUtcIso(form.end_at),
+      };
+
       if (editingId) {
-        await updateScheduleItem(token, editingId, form);
+        await updateScheduleItem(token, editingId, payload);
         setStatusMessage('Schedule item updated.');
       } else {
-        await createScheduleItem(token, form);
+        await createScheduleItem(token, payload);
         setStatusMessage('Schedule item saved.');
       }
       resetForm();
@@ -81,8 +77,8 @@ export default function Scheduling({ token, onScheduleChanged }) {
     setForm({
       title: item.title || '',
       description: item.description || '',
-      start_at: toLocalInput(item.start_at),
-      end_at: toLocalInput(item.end_at),
+      start_at: toLocalDateTimeInput(item.start_at),
+      end_at: toLocalDateTimeInput(item.end_at),
       location: item.location || '',
       status: item.status || 'scheduled',
     });
@@ -92,7 +88,7 @@ export default function Scheduling({ token, onScheduleChanged }) {
     <section className="scheduling-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 7 MVP</p>
+          <p className="eyebrow">Internal schedule</p>
           <h2>Scheduling</h2>
         </div>
         <span className="status-pill">{scheduleItems.length} upcoming items</span>
@@ -105,7 +101,7 @@ export default function Scheduling({ token, onScheduleChanged }) {
           <div className="control-row">
             <div>
               <h3>{editingId ? 'Edit Schedule Item' : 'Add Schedule Item'}</h3>
-              <p className="muted">Track planned time blocks and appointments.</p>
+              <p className="muted">Times are saved in UTC and shown in {localTimeZone()}.</p>
             </div>
             {editingId && <button className="secondary-button" onClick={resetForm} type="button">Cancel edit</button>}
           </div>
@@ -156,7 +152,7 @@ export default function Scheduling({ token, onScheduleChanged }) {
                         <span className="task-meta">{item.status}</span>
                         <h4>{item.title}</h4>
                       </div>
-                      <span className="entry-date">{formatDate(item.start_at)}</span>
+                      <span className="entry-date">{formatLocalDateTime(item.start_at)}</span>
                     </div>
                     {item.description && <p>{item.description}</p>}
                     {item.location && <p>Location: {item.location}</p>}

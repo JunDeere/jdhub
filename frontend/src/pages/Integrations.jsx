@@ -117,7 +117,7 @@ export default function Integrations({ token, onIntegrationsChanged }) {
     <section className="integrations-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Week 12 MVP</p>
+          <p className="eyebrow">Integration planning</p>
           <h2>Integrations</h2>
         </div>
         <span className="status-pill">{records.length} planned records</span>
