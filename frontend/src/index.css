@@ -5844,6 +5844,21 @@ h3 {
   white-space: nowrap;
 }
 
+.public-share-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.public-share-download-button {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
 .public-share-file-card {
   gap: 16px;
   border: 1px solid var(--border);

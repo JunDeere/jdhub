@@ -132,7 +132,18 @@ export default function PublicShare({ shareToken }) {
                   {data.items.length === 0 ? <div className="public-share-state"><FolderOpen size={30} /><p>This folder is empty.</p></div> : data.items.map((item) => (
                     <article className="public-share-item" key={item._id} onContextMenu={(event) => openContextMenu(event, item)}>
                       <button className="public-share-item-main" onDoubleClick={() => item.kind === 'folder' ? openFolder(item) : downloadFile(item)} type="button"><span>{item.kind === 'folder' ? <Folder size={24} /> : <File size={24} />}</span><div><strong>{item.name}</strong><small>{item.kind === 'folder' ? 'Folder' : formatBytes(item.size)}</small></div></button>
-                      <button aria-label={`More actions for ${item.name}`} className="icon-button" onClick={(event) => openMoreMenu(event, item)} type="button"><MoreVertical size={17} /></button>
+                      <div className="public-share-item-actions">
+                        <button
+                          className="secondary-button public-share-download-button"
+                          disabled={item.kind === 'file' && downloadingId === item._id}
+                          onClick={() => item.kind === 'folder' ? downloadFolder(item) : downloadFile(item)}
+                          type="button"
+                        >
+                          <Download size={16} />
+                          {item.kind === 'file' && downloadingId === item._id ? 'Downloading…' : 'Download'}
+                        </button>
+                        <button aria-label={`More actions for ${item.name}`} className="icon-button" onClick={(event) => openMoreMenu(event, item)} type="button"><MoreVertical size={17} /></button>
+                      </div>
                     </article>
                   ))}
                 </div>
