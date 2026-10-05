@@ -6,6 +6,11 @@ and remains in the `0.x` pre-stable phase.
 ## Unreleased
 
 - Final documentation review and release verification before the next push.
+- Added administrator-controlled per-account email verification policies while
+  retaining the server-wide master switch and mandatory protection for the
+  primary administrator.
+- Added chunked large-file uploads so public uploads remain below Cloudflare's
+  per-request body limit while preserving JDHub quota and safety inspection.
 
 ## 0.2.0-beta.1 - 2026-10-05
 

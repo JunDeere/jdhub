@@ -13,7 +13,7 @@ const {
   roleForEmail,
 } = require("../services/siteRoles");
 const {
-  emailAuthEnabled,
+  emailVerificationRequired,
   sendLoginCode,
 } = require("../services/securityEmail");
 const {
@@ -161,7 +161,7 @@ router.post("/register", async (req, res) => {
       name,
       role: roleForEmail(normalizedEmail),
     });
-    if (emailAuthEnabled() && !user.is_demo) {
+    if (emailVerificationRequired(user)) {
       return res.json(await beginEmailChallenge(req, user));
     }
 
@@ -228,7 +228,7 @@ router.post("/login", async (req, res) => {
     }
 
     await ensureUserRole(user);
-    if (emailAuthEnabled() && !user.is_demo) {
+    if (emailVerificationRequired(user)) {
       const trustedBrowser = await findTrustedBrowser(req, user._id);
       if (!trustedBrowser)
         return res.json(await beginEmailChallenge(req, user));

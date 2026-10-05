@@ -1,4 +1,6 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '';
+const DIRECT_UPLOAD_LIMIT = 64 * 1024 * 1024;
+const CHUNK_SIZE = 16 * 1024 * 1024;
 
 async function parseJson(response) {
   if (!response.ok) {
@@ -29,25 +31,15 @@ export async function createFolder(token, { name, parentId }) {
   return parseJson(response);
 }
 
-export async function uploadFile(token, { file, parentId, relatedProjectId, description, onProgress }) {
-  const body = new FormData();
-  body.append('file', file);
-  if (parentId) body.append('parent_id', parentId);
-  if (relatedProjectId) body.append('related_project_id', relatedProjectId);
-  if (description.trim()) body.append('description', description.trim());
-
+function sendFormData(token, path, body, onProgress) {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.open('POST', `${API_BASE}/api/files/upload`);
+    request.open('POST', `${API_BASE}${path}`);
     request.setRequestHeader('Authorization', `Bearer ${token}`);
 
     request.upload.addEventListener('progress', (event) => {
       if (!event.lengthComputable || typeof onProgress !== 'function') return;
-      onProgress({
-        loaded: event.loaded,
-        total: event.total,
-        percent: Math.round((event.loaded / event.total) * 100),
-      });
+      onProgress(event.loaded, event.total);
     });
 
     request.addEventListener('load', () => {
@@ -58,14 +50,83 @@ export async function uploadFile(token, { file, parentId, relatedProjectId, desc
         reject(new Error('The upload server returned an invalid response'));
         return;
       }
-
       if (request.status >= 200 && request.status < 300) resolve(response);
       else reject(new Error(response.error || 'File upload failed'));
     });
 
-    request.addEventListener('error', () => reject(new Error('Unable to reach the upload server')));
+    request.addEventListener('error', () => reject(new Error(
+      'The upload connection was interrupted. JDHub will restart this file when you try again.',
+    )));
     request.addEventListener('abort', () => reject(new Error('File upload was cancelled')));
     request.send(body);
+  });
+}
+
+async function uploadFileInChunks(token, { file, parentId, relatedProjectId, description, onProgress }) {
+  const response = await fetch(`${API_BASE}/api/files/uploads`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: file.name,
+      size: file.size,
+      mime_type: file.type,
+      chunk_size: CHUNK_SIZE,
+      parent_id: parentId || null,
+      related_project_id: relatedProjectId || null,
+      description: description.trim(),
+    }),
+  });
+  const session = await parseJson(response);
+  let finalResponse = null;
+
+  for (let index = 0; index < session.totalChunks; index += 1) {
+    const start = index * session.chunkSize;
+    const end = Math.min(file.size, start + session.chunkSize);
+    const body = new FormData();
+    body.append('index', String(index));
+    body.append('chunk', file.slice(start, end), `${file.name}.part`);
+    finalResponse = await sendFormData(
+      token,
+      `/api/files/uploads/${encodeURIComponent(session.uploadId)}/chunks`,
+      body,
+      (loaded) => {
+        if (typeof onProgress !== 'function') return;
+        const overallLoaded = Math.min(file.size, start + Math.min(loaded, end - start));
+        onProgress({
+          loaded: overallLoaded,
+          total: file.size,
+          percent: Math.round((overallLoaded / file.size) * 100),
+        });
+      },
+    );
+  }
+  return finalResponse;
+}
+
+export async function uploadFile(token, { file, parentId, relatedProjectId, description, onProgress }) {
+  if (file.size > DIRECT_UPLOAD_LIMIT) {
+    return uploadFileInChunks(token, {
+      file,
+      parentId,
+      relatedProjectId,
+      description,
+      onProgress,
+    });
+  }
+
+  const body = new FormData();
+  body.append('file', file);
+  if (parentId) body.append('parent_id', parentId);
+  if (relatedProjectId) body.append('related_project_id', relatedProjectId);
+  if (description.trim()) body.append('description', description.trim());
+
+  return sendFormData(token, '/api/files/upload', body, (loaded, total) => {
+    if (typeof onProgress !== 'function') return;
+    onProgress({
+      loaded,
+      total,
+      percent: Math.round((loaded / total) * 100),
+    });
   });
 }
 

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { pipeline } = require('stream/promises');
 const mongoose = require('mongoose');
 const multer = require('multer');
 const FileItem = require('../models/FileItem');
@@ -17,6 +18,8 @@ const storageRoot = path.resolve(process.env.FILE_STORAGE_ROOT || path.join(proc
 const gigabyte = 1024 ** 3;
 const totalQuotaBytes = Math.max(1, Number(process.env.FILE_TOTAL_QUOTA_GB) || 300) * gigabyte;
 const userQuotaBytes = Math.max(1, Number(process.env.FILE_USER_QUOTA_GB) || 10) * gigabyte;
+const maxChunkBytes = 24 * 1024 * 1024;
+const chunkSessionLifetimeMs = 24 * 60 * 60 * 1000;
 let quotaQueue = Promise.resolve();
 
 function cleanName(value, fallback = 'Untitled') {
@@ -118,6 +121,126 @@ const upload = multer({
   }),
   limits: { files: 1 },
 });
+
+const chunkUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, callback) {
+      const directory = incomingStorageDir(req.userId);
+      fs.mkdir(directory, { recursive: true }, (error) => callback(error, directory));
+    },
+    filename(req, file, callback) {
+      callback(null, `chunk-${crypto.randomUUID()}`);
+    },
+  }),
+  limits: { files: 1, fileSize: maxChunkBytes },
+});
+
+function uploadSessionPaths(userId, uploadId) {
+  const directory = incomingStorageDir(userId);
+  return {
+    directory,
+    metadataPath: path.join(directory, `upload-${uploadId}.json`),
+    assembledPath: path.join(directory, `upload-${uploadId}.part`),
+  };
+}
+
+async function cleanupExpiredUploadSessions(userId) {
+  const directory = incomingStorageDir(userId);
+  const names = await fs.promises.readdir(directory).catch(() => []);
+  const now = Date.now();
+  await Promise.all(names
+    .filter((name) => /^upload-[0-9a-f-]+\.json$/i.test(name))
+    .map(async (name) => {
+      const metadataPath = path.join(directory, name);
+      try {
+        const metadata = JSON.parse(await fs.promises.readFile(metadataPath, 'utf8'));
+        if (Number(metadata.expiresAt) > now) return;
+        await fs.promises.unlink(metadataPath).catch(() => {});
+        await fs.promises.unlink(path.join(directory, name.replace(/\.json$/, '.part'))).catch(() => {});
+      } catch {
+        await fs.promises.unlink(metadataPath).catch(() => {});
+      }
+    }));
+}
+
+async function finalizeUploadedFile({
+  userId,
+  tempPath,
+  storedName,
+  originalName,
+  mimeType,
+  size,
+  parentId,
+  relatedProjectId,
+  description,
+}) {
+  const parent = await getFolder(userId, parentId);
+  if (parent === undefined || (parentId && !parent)) {
+    const error = new Error('Upload folder is invalid');
+    error.status = 400;
+    throw error;
+  }
+  if (relatedProjectId && !mongoose.Types.ObjectId.isValid(relatedProjectId)) {
+    const error = new Error('Project selection is invalid');
+    error.status = 400;
+    throw error;
+  }
+
+  const inspection = await inspectUpload(tempPath, originalName);
+  if (!inspection.allowed) {
+    const error = new Error(`Upload blocked by the file safety check: ${inspection.findings[0]}`);
+    error.status = 415;
+    throw error;
+  }
+
+  const item = await withQuotaLock(async () => {
+    const [usage, isAdmin] = await Promise.all([
+      storageUsage(userId),
+      isAdministrator(userId),
+    ]);
+    const violation = quotaViolation({
+      isAdmin,
+      totalUsedBytes: usage.total,
+      userUsedBytes: usage.user,
+      uploadBytes: size,
+      totalQuotaBytes,
+      userQuotaBytes,
+    });
+    if (violation) {
+      const error = new Error(violation.message);
+      error.status = violation.status;
+      throw error;
+    }
+
+    const directory = userStorageDir(userId);
+    await fs.promises.mkdir(directory, { recursive: true });
+    const finalPath = path.join(directory, storedName);
+    await fs.promises.rename(tempPath, finalPath);
+
+    try {
+      return await FileItem.create({
+        user_id: userId,
+        kind: 'file',
+        name: cleanName(originalName, 'file'),
+        parent_id: parent?._id || null,
+        stored_name: storedName,
+        storage_path: path.relative(storageRoot, finalPath),
+        mime_type: mimeType || 'application/octet-stream',
+        size,
+        sha256: inspection.sha256,
+        security_status: inspection.status,
+        security_findings: inspection.findings,
+        description: typeof description === 'string' ? description.trim().slice(0, 500) : '',
+        related_project_id: relatedProjectId || null,
+      });
+    } catch (error) {
+      await fs.promises.unlink(finalPath).catch(() => {});
+      throw error;
+    }
+  });
+  await item.populate('related_project_id', 'name status');
+  return item;
+}
 
 router.use(authMiddleware);
 
@@ -283,75 +406,172 @@ router.post('/upload', (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Choose a file to upload' });
 
     try {
-      const parent = await getFolder(req.userId, req.body.parent_id);
-      if (parent === undefined || (req.body.parent_id && !parent)) {
-        await fs.promises.unlink(req.file.path).catch(() => {});
-        return res.status(400).json({ error: 'Upload folder is invalid' });
-      }
-      const relatedProjectId = req.body.related_project_id;
-      if (relatedProjectId && !mongoose.Types.ObjectId.isValid(relatedProjectId)) {
-        await fs.promises.unlink(req.file.path).catch(() => {});
-        return res.status(400).json({ error: 'Project selection is invalid' });
-      }
-
-      const inspection = await inspectUpload(req.file.path, req.file.originalname);
-      if (!inspection.allowed) {
-        await fs.promises.unlink(req.file.path).catch(() => {});
-        return res.status(415).json({
-          error: `Upload blocked by the file safety check: ${inspection.findings[0]}`,
-        });
-      }
-
-      const item = await withQuotaLock(async () => {
-        const [usage, isAdmin] = await Promise.all([
-          storageUsage(req.userId),
-          isAdministrator(req.userId),
-        ]);
-        const violation = quotaViolation({
-          isAdmin,
-          totalUsedBytes: usage.total,
-          userUsedBytes: usage.user,
-          uploadBytes: req.file.size,
-          totalQuotaBytes,
-          userQuotaBytes,
-        });
-        if (violation) {
-          const quotaError = new Error(violation.message);
-          quotaError.status = violation.status;
-          throw quotaError;
-        }
-
-        const directory = userStorageDir(req.userId);
-        await fs.promises.mkdir(directory, { recursive: true });
-        const finalPath = path.join(directory, req.file.filename);
-        await fs.promises.rename(req.file.path, finalPath);
-
-        try {
-          return await FileItem.create({
-            user_id: req.userId,
-            kind: 'file',
-            name: cleanName(req.file.originalname, 'file'),
-            parent_id: parent?._id || null,
-            stored_name: req.file.filename,
-            storage_path: path.relative(storageRoot, finalPath),
-            mime_type: req.file.mimetype || 'application/octet-stream',
-            size: req.file.size,
-            sha256: inspection.sha256,
-            security_status: inspection.status,
-            security_findings: inspection.findings,
-            description: typeof req.body.description === 'string' ? req.body.description.trim().slice(0, 500) : '',
-            related_project_id: relatedProjectId || null,
-          });
-        } catch (error) {
-          await fs.promises.unlink(finalPath).catch(() => {});
-          throw error;
-        }
+      const item = await finalizeUploadedFile({
+        userId: req.userId,
+        tempPath: req.file.path,
+        storedName: req.file.filename,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        parentId: req.body.parent_id,
+        relatedProjectId: req.body.related_project_id,
+        description: req.body.description,
       });
-      await item.populate('related_project_id', 'name status');
       return res.status(201).json({ item });
     } catch (error) {
       await fs.promises.unlink(req.file.path).catch(() => {});
       return res.status(error.status || 500).json({ error: error.message });
+    }
+  });
+});
+
+router.post('/uploads', express.json(), async (req, res) => {
+  try {
+    const size = Number(req.body.size);
+    const requestedChunkSize = Number(req.body.chunk_size);
+    if (!Number.isSafeInteger(size) || size <= 0) {
+      return res.status(400).json({ error: 'Upload size is invalid' });
+    }
+    if (!Number.isSafeInteger(requestedChunkSize) || requestedChunkSize <= 0) {
+      return res.status(400).json({ error: 'Chunk size is invalid' });
+    }
+
+    const chunkSize = Math.min(requestedChunkSize, maxChunkBytes);
+    const totalChunks = Math.ceil(size / chunkSize);
+    if (totalChunks > 10000) {
+      return res.status(400).json({ error: 'This file requires too many upload chunks' });
+    }
+
+    const parent = await getFolder(req.userId, req.body.parent_id);
+    if (parent === undefined || (req.body.parent_id && !parent)) {
+      return res.status(400).json({ error: 'Upload folder is invalid' });
+    }
+    const relatedProjectId = req.body.related_project_id || '';
+    if (relatedProjectId && !mongoose.Types.ObjectId.isValid(relatedProjectId)) {
+      return res.status(400).json({ error: 'Project selection is invalid' });
+    }
+
+    const [usage, isAdmin] = await Promise.all([
+      storageUsage(req.userId),
+      isAdministrator(req.userId),
+    ]);
+    const violation = quotaViolation({
+      isAdmin,
+      totalUsedBytes: usage.total,
+      userUsedBytes: usage.user,
+      uploadBytes: size,
+      totalQuotaBytes,
+      userQuotaBytes,
+    });
+    if (violation) return res.status(violation.status).json({ error: violation.message });
+
+    await cleanupExpiredUploadSessions(req.userId);
+    const uploadId = crypto.randomUUID();
+    const paths = uploadSessionPaths(req.userId, uploadId);
+    await fs.promises.mkdir(paths.directory, { recursive: true });
+    const metadata = {
+      uploadId,
+      originalName: cleanName(req.body.name, 'file'),
+      mimeType: String(req.body.mime_type || 'application/octet-stream').slice(0, 200),
+      size,
+      chunkSize,
+      totalChunks,
+      nextIndex: 0,
+      receivedBytes: 0,
+      parentId: parent?._id ? String(parent._id) : '',
+      relatedProjectId,
+      description: typeof req.body.description === 'string' ? req.body.description.trim().slice(0, 500) : '',
+      expiresAt: Date.now() + chunkSessionLifetimeMs,
+    };
+    await fs.promises.writeFile(paths.assembledPath, '', { flag: 'wx' });
+    await fs.promises.writeFile(paths.metadataPath, JSON.stringify(metadata), { flag: 'wx' });
+    return res.status(201).json({ uploadId, chunkSize, totalChunks });
+  } catch (error) {
+    return res.status(error.code === 'EEXIST' ? 409 : 500).json({ error: error.message });
+  }
+});
+
+router.post('/uploads/:uploadId/chunks', (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.uploadId)) {
+    return res.status(400).json({ error: 'Upload session is invalid' });
+  }
+
+  chunkUpload.single('chunk')(req, res, async (uploadError) => {
+    if (uploadError) {
+      const message = uploadError.code === 'LIMIT_FILE_SIZE'
+        ? `Each upload chunk must be ${Math.round(maxChunkBytes / (1024 ** 2))} MB or smaller`
+        : uploadError.message;
+      return res.status(400).json({ error: message });
+    }
+    if (!req.file) return res.status(400).json({ error: 'Upload chunk is missing' });
+
+    const paths = uploadSessionPaths(req.userId, req.params.uploadId);
+    try {
+      const metadata = JSON.parse(await fs.promises.readFile(paths.metadataPath, 'utf8'));
+      if (Number(metadata.expiresAt) <= Date.now()) {
+        const error = new Error('Upload session expired. Start the upload again.');
+        error.status = 410;
+        throw error;
+      }
+
+      const chunkIndex = Number(req.body.index);
+      if (!Number.isSafeInteger(chunkIndex) || chunkIndex !== metadata.nextIndex) {
+        const error = new Error(`Expected upload chunk ${metadata.nextIndex + 1}`);
+        error.status = 409;
+        throw error;
+      }
+      const expectedBytes = Math.min(metadata.chunkSize, metadata.size - metadata.receivedBytes);
+      if (req.file.size !== expectedBytes) {
+        const error = new Error('Upload chunk size does not match the file');
+        error.status = 400;
+        throw error;
+      }
+
+      await pipeline(
+        fs.createReadStream(req.file.path),
+        fs.createWriteStream(paths.assembledPath, { flags: 'a' }),
+      );
+      await fs.promises.unlink(req.file.path).catch(() => {});
+      metadata.receivedBytes += req.file.size;
+      metadata.nextIndex += 1;
+      metadata.expiresAt = Date.now() + chunkSessionLifetimeMs;
+
+      if (metadata.nextIndex < metadata.totalChunks) {
+        await fs.promises.writeFile(paths.metadataPath, JSON.stringify(metadata));
+        return res.status(202).json({
+          complete: false,
+          receivedBytes: metadata.receivedBytes,
+          nextIndex: metadata.nextIndex,
+        });
+      }
+      if (metadata.receivedBytes !== metadata.size) {
+        const error = new Error('Completed upload size does not match the original file');
+        error.status = 400;
+        throw error;
+      }
+
+      const item = await finalizeUploadedFile({
+        userId: req.userId,
+        tempPath: paths.assembledPath,
+        storedName: crypto.randomUUID(),
+        originalName: metadata.originalName,
+        mimeType: metadata.mimeType,
+        size: metadata.size,
+        parentId: metadata.parentId,
+        relatedProjectId: metadata.relatedProjectId,
+        description: metadata.description,
+      });
+      await fs.promises.unlink(paths.metadataPath).catch(() => {});
+      return res.status(201).json({ complete: true, item });
+    } catch (error) {
+      await fs.promises.unlink(req.file.path).catch(() => {});
+      if (error.status !== 409) {
+        await fs.promises.unlink(paths.metadataPath).catch(() => {});
+        await fs.promises.unlink(paths.assembledPath).catch(() => {});
+      }
+      return res.status(error.status || (error.code === 'ENOENT' ? 404 : 500)).json({
+        error: error.code === 'ENOENT' ? 'Upload session was not found. Start the upload again.' : error.message,
+      });
     }
   });
 });

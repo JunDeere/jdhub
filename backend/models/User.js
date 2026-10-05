@@ -19,6 +19,10 @@ const UserSchema = new mongoose.Schema(
       default: "active",
       index: true,
     },
+    email_verification_required: {
+      type: Boolean,
+      default: true,
+    },
 
     last_login_at: {
       type: Date,

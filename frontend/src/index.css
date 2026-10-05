@@ -372,6 +372,18 @@ h3 {
   width: 100%;
 }
 
+.admin-account-form .admin-account-checkbox {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+}
+
+.admin-account-checkbox input {
+  width: auto;
+}
+
 .admin-account-form button {
   margin-top: 2px;
 }
@@ -400,11 +412,52 @@ h3 {
 
 .admin-user-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.25fr) 110px minmax(170px, 1fr) 82px auto;
+  grid-template-columns: minmax(180px, 1.25fr) 110px minmax(150px, 0.9fr) 130px 82px auto;
   align-items: center;
   gap: 14px;
   padding: 14px 0;
   border-bottom: 1px solid var(--border);
+}
+
+.email-verification-master {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+}
+
+.email-verification-master.enabled {
+  color: #34d399;
+}
+
+.email-verification-master.disabled {
+  color: #fbbf24;
+}
+
+.admin-user-verification {
+  display: grid;
+  gap: 5px;
+}
+
+.admin-user-verification > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.admin-user-verification button {
+  width: fit-content;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 0.72rem;
+}
+
+.admin-user-verification .verification-required {
+  color: #34d399;
+  background: color-mix(in srgb, #34d399 14%, transparent);
+}
+
+.admin-user-verification .verification-optional {
+  color: #fbbf24;
+  background: color-mix(in srgb, #fbbf24 14%, transparent);
 }
 
 .admin-user-row:last-child {
@@ -468,7 +521,8 @@ h3 {
   }
 
   .admin-user-role,
-  .admin-user-dates {
+  .admin-user-dates,
+  .admin-user-verification {
     grid-column: 1;
   }
 
@@ -490,6 +544,7 @@ h3 {
 
   .admin-user-role,
   .admin-user-dates,
+  .admin-user-verification,
   .account-status,
   .admin-user-row .secondary-button {
     grid-column: 1;

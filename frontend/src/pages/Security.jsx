@@ -6,6 +6,7 @@ import {
   removeTrustedNetwork,
   revokeTrustedBrowser,
   trustNetwork,
+  updateUserEmailVerification,
   updateUserStatus,
 } from "../api/security.js";
 
@@ -24,10 +25,16 @@ export default function Security({ token }) {
   const [securityData, setSecurityData] = useState(null);
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [emailVerificationEnabled, setEmailVerificationEnabled] = useState(false);
   const [error, setError] = useState("");
   const [ip, setIp] = useState("");
   const [label, setLabel] = useState("");
-  const [newUser, setNewUser] = useState({ name: "", email: "", password: "" });
+  const [newUser, setNewUser] = useState({
+    name: "",
+    email: "",
+    password: "",
+    email_verification_required: true,
+  });
   const [creatingUser, setCreatingUser] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState(null);
   const [accountStatus, setAccountStatus] = useState(null);
@@ -47,6 +54,7 @@ export default function Security({ token }) {
     try {
       const result = await getUsers(token);
       setUsers(result.users);
+      setEmailVerificationEnabled(Boolean(result.emailVerificationEnabled));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -63,6 +71,7 @@ export default function Security({ token }) {
         setSecurityData(securityResult);
         setIp((current) => current || securityResult.currentIp);
         setUsers(usersResult.users);
+        setEmailVerificationEnabled(Boolean(usersResult.emailVerificationEnabled));
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
@@ -95,7 +104,7 @@ export default function Security({ token }) {
 
     try {
       const result = await createUser(token, newUser);
-      setNewUser({ name: "", email: "", password: "" });
+      setNewUser({ name: "", email: "", password: "", email_verification_required: true });
       setAccountStatus({
         type: "success",
         message: `Account created for ${result.user.email}.`,
@@ -105,6 +114,24 @@ export default function Security({ token }) {
       setAccountStatus({ type: "error", message: err.message });
     } finally {
       setCreatingUser(false);
+    }
+  };
+
+  const changeEmailVerification = async (user) => {
+    const currentlyRequired = user.email_verification_required !== false;
+    const required = !currentlyRequired;
+    const action = required ? "require email verification for" : "allow password-only sign-in for";
+    if (!window.confirm(`Do you want to ${action} ${user.email}?`)) return;
+
+    setError("");
+    setUpdatingUserId(user._id);
+    try {
+      await updateUserEmailVerification(token, user._id, required);
+      await loadUsers();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUpdatingUserId(null);
     }
   };
 
@@ -176,6 +203,9 @@ export default function Security({ token }) {
                 <p className="eyebrow">Approved access</p>
                 <h3>Users</h3>
                 <p className="muted">Review the accounts that can access JDHub.</p>
+                <p className={`email-verification-master ${emailVerificationEnabled ? "enabled" : "disabled"}`}>
+                  Global email verification: {emailVerificationEnabled ? "Enabled" : "Disabled in the server environment"}
+                </p>
               </div>
               <span className="status-chip">{users.length} accounts</span>
             </div>
@@ -187,6 +217,8 @@ export default function Security({ token }) {
                 {users.map((user) => {
                   const status = user.status || "active";
                   const isProtected = user.role === "admin";
+                  const verificationRequired = !user.is_demo && user.email_verification_required !== false;
+                  const verificationLocked = isProtected || user.is_demo;
                   const isUpdating = updatingUserId === user._id;
                   return (
                     <div className="admin-user-row" key={user._id}>
@@ -198,6 +230,18 @@ export default function Security({ token }) {
                       <div className="admin-user-dates">
                         <span>Created {new Date(user.createdAt).toLocaleDateString()}</span>
                         <small>Last sign-in: {when(user.last_login_at)}</small>
+                      </div>
+                      <div className="admin-user-verification">
+                        <span>Email verification</span>
+                        <button
+                          className={verificationRequired ? "verification-required" : "verification-optional"}
+                          disabled={verificationLocked || isUpdating}
+                          onClick={() => changeEmailVerification(user)}
+                          title={user.is_demo ? "The demo account bypasses email verification" : isProtected ? "The primary administrator must keep email verification enabled" : undefined}
+                          type="button"
+                        >
+                          {user.is_demo ? "Bypassed" : verificationRequired ? "Required" : "Password only"}
+                        </button>
                       </div>
                       <span className={`account-status ${status}`}>{status}</span>
                       <button className="secondary-button" disabled={isProtected || isUpdating} onClick={() => changeUserStatus(user)} title={isProtected ? "The primary administrator is protected" : undefined} type="button">
@@ -229,6 +273,14 @@ export default function Security({ token }) {
               <label>
                 Initial password
                 <input autoComplete="new-password" minLength="12" type="password" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} placeholder="At least 12 characters" required />
+              </label>
+              <label className="admin-account-checkbox">
+                <input
+                  checked={newUser.email_verification_required}
+                  onChange={(event) => setNewUser((current) => ({ ...current, email_verification_required: event.target.checked }))}
+                  type="checkbox"
+                />
+                Require email verification on untrusted browsers
               </label>
               <button className="primary-button" disabled={creatingUser} type="submit">{creatingUser ? "Creating…" : "Create member"}</button>
             </form>

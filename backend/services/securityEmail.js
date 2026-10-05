@@ -4,6 +4,12 @@ function emailAuthEnabled() {
   return process.env.EMAIL_AUTH_REQUIRED === 'true';
 }
 
+function emailVerificationRequired(user) {
+  return emailAuthEnabled()
+    && !user?.is_demo
+    && user?.email_verification_required !== false;
+}
+
 function createTransport() {
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
@@ -41,4 +47,4 @@ async function sendLoginCode({ email, code, ip, userAgent }) {
   });
 }
 
-module.exports = { emailAuthEnabled, sendLoginCode };
+module.exports = { emailAuthEnabled, emailVerificationRequired, sendLoginCode };

@@ -23,6 +23,12 @@ export const updateUserStatus = (token, id, status) =>
     body: JSON.stringify({ status }),
   });
 
+export const updateUserEmailVerification = (token, id, required) =>
+  request(`/api/security/users/${id}/email-verification`, token, {
+    method: "PATCH",
+    body: JSON.stringify({ required }),
+  });
+
 export const getSecurityOverview = (token) =>
   request("/api/security/overview", token);
 

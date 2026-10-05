@@ -22,6 +22,75 @@ New entries should go at the top of the journal section.
 
 ---
 
+## 2026-10-05 - Cloudflare-Safe Large File Uploads
+
+### What We Worked On
+
+We traced large File workspace uploads that were being reset before JDHub could
+return an application error.
+
+### What We Finished
+
+- Confirmed JDHub's Nginx and Multer configuration did not impose the observed
+  whole-file limit.
+- Identified Cloudflare's plan-level request-body limit on the public hostname.
+- Added a server-created upload session for large files.
+- Split files larger than 64 MB into sequential 16 MB requests.
+- Reassembled chunks only inside the authenticated user's private incoming area.
+- Preserved folder selection, project metadata, storage quotas, executable
+  inspection, SHA-256 hashing, and final upload progress.
+- Added 24-hour cleanup metadata for abandoned upload sessions.
+- Improved the interrupted-connection message shown to users.
+
+### Verification
+
+- Backend automated tests passed: 21 of 21.
+- Frontend ESLint passed.
+- Frontend production build passed.
+- Backend syntax and Git whitespace checks passed.
+- A full large-file upload through the public Cloudflare hostname still requires
+  deployment and browser verification.
+- This change is local and has not been committed, pushed, or deployed.
+
+### Possible Next Steps
+
+- Add automatic retry for an interrupted individual chunk.
+- Add explicit pause/resume controls if multi-gigabyte uploads become common.
+
+---
+
+## 2026-10-05 - Per-Account Email Verification Controls
+
+### What We Worked On
+
+We added administrator control over whether individual member accounts require
+an emailed sign-in code on untrusted browsers.
+
+### What We Finished
+
+- Kept `EMAIL_AUTH_REQUIRED` as the server-wide master switch.
+- Added an account-level email-verification policy that defaults to required.
+- Added a toggle to each member row in Administration > Users.
+- Added the same policy to the Create member form.
+- Kept the demo account exempt and prevented email verification from being
+  disabled for the primary administrator.
+- Revoked an account's existing trusted browsers when verification is enabled,
+  ensuring its next sign-in performs the email challenge.
+- Recorded policy changes in the security-event log.
+
+### Verification
+
+- Added backend policy tests for the global switch, member override, and demo
+  exemption.
+- This change is local and has not been committed, pushed, or deployed.
+
+### Possible Next Steps
+
+- Add temporary verification exemptions with automatic expiry if needed.
+- Add an account-security audit filter to the Administration view.
+
+---
+
 ## 2026-10-05 - Product Versioning Established
 
 ### What We Worked On

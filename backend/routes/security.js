@@ -7,6 +7,7 @@ const SecurityEvent = require("../models/SecurityEvent");
 const TrustedBrowser = require("../models/TrustedBrowser");
 const TrustedNetwork = require("../models/TrustedNetwork");
 const { clientIp, recordSecurityEvent } = require("../services/securityAudit");
+const { emailAuthEnabled } = require("../services/securityEmail");
 const { adminEmail, normalizeEmail } = require("../services/siteRoles");
 const router = express.Router();
 router.use(auth, requireAdmin);
@@ -91,11 +92,11 @@ router.patch("/trusted-browsers/:id/revoke", async (req, res) => {
 router.get("/users", async (req, res) => {
   try {
     const users = await User.find()
-      .select("_id name email role status is_demo createdAt last_login_at")
+      .select("_id name email role status is_demo email_verification_required createdAt last_login_at")
       .sort({ role: 1, name: 1, email: 1 })
       .lean();
 
-    return res.json({ users });
+    return res.json({ users, emailVerificationEnabled: emailAuthEnabled() });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
@@ -106,6 +107,7 @@ router.post("/users", async (req, res) => {
     const email = normalizeEmail(req.body.email);
     const name = String(req.body.name || "").trim();
     const password = String(req.body.password || "");
+    const emailVerificationRequired = req.body.email_verification_required !== false;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -132,6 +134,7 @@ router.post("/users", async (req, res) => {
       password_hash: await bcrypt.hash(password, 10),
       role: "member",
       status: "active",
+      email_verification_required: emailVerificationRequired,
     });
 
     await recordSecurityEvent(req, {
@@ -148,6 +151,7 @@ router.post("/users", async (req, res) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        email_verification_required: user.email_verification_required,
         createdAt: user.createdAt,
       },
     });
@@ -217,6 +221,72 @@ router.patch("/users/:id/status", async (req, res) => {
         role: user.role,
         status: user.status,
         is_demo: user.is_demo,
+        email_verification_required: user.email_verification_required,
+        createdAt: user.createdAt,
+        last_login_at: user.last_login_at,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+router.patch("/users/:id/email-verification", async (req, res) => {
+  try {
+    if (typeof req.body.required !== "boolean") {
+      return res.status(400).json({
+        error: "Email verification preference must be true or false",
+      });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.is_demo) {
+      return res.status(400).json({
+        error: "The demo account does not use email verification",
+      });
+    }
+
+    if (!req.body.required && normalizeEmail(user.email) === adminEmail()) {
+      return res.status(400).json({
+        error: "The primary administrator must keep email verification enabled",
+      });
+    }
+
+    user.email_verification_required = req.body.required;
+    await user.save();
+
+    if (req.body.required) {
+      await TrustedBrowser.updateMany(
+        { user_id: user._id, revoked_at: { $exists: false } },
+        { $set: { revoked_at: new Date() } },
+      );
+    }
+
+    await recordSecurityEvent(req, {
+      user_id: user._id,
+      email: user.email,
+      type: req.body.required
+        ? "email_verification_enabled"
+        : "email_verification_disabled",
+      outcome: "success",
+      detail: req.body.required
+        ? "Email verification required by an administrator. Existing trusted browsers were revoked."
+        : "Email verification disabled by an administrator.",
+    });
+
+    return res.json({
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        is_demo: user.is_demo,
+        email_verification_required: user.email_verification_required,
         createdAt: user.createdAt,
         last_login_at: user.last_login_at,
       },
