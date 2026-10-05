@@ -22,6 +22,30 @@ New entries should go at the top of the journal section.
 
 ---
 
+## 2026-10-05 - Anonymous Share Route Repaired
+
+### What We Worked On
+
+We investigated valid `share.jdeere.net/s/<token>` links returning a generic
+Nginx 404 in private browsing.
+
+### What We Finished
+
+- Confirmed public shares do not require a JDHub login.
+- Corrected the share-host Nginx fallback so `/s/<token>` loads the neutral
+  public-share application shell.
+- Kept authorization in the public-share API, where invalid, revoked, and
+  expired tokens still return unavailable.
+
+### Verification
+
+- Confirmed the public share root was reachable while `/s/<token>` was being
+  rejected by the frontend Nginx fallback.
+- This routing correction is local and still requires a frontend rebuild and
+  public incognito verification.
+
+---
+
 ## 2026-10-05 - Cloudflare-Safe Large File Uploads
 
 ### What We Worked On

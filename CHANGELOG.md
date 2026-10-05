@@ -11,6 +11,8 @@ and remains in the `0.x` pre-stable phase.
   primary administrator.
 - Added chunked large-file uploads so public uploads remain below Cloudflare's
   per-request body limit while preserving JDHub quota and safety inspection.
+- Fixed public share URLs so anonymous visitors can load the neutral share page;
+  the backend still rejects invalid, revoked, and expired tokens.
 
 ## 0.2.0-beta.1 - 2026-10-05
 
