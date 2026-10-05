@@ -72,4 +72,18 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
+router.delete('/:id', async (req, res) => {
+  try {
+    const scheduleItem = await ScheduleItem.findOneAndDelete({
+      _id: req.params.id,
+      user_id: req.userId,
+    });
+    if (!scheduleItem) return res.status(404).json({ error: 'Schedule item not found' });
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

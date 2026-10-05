@@ -7,6 +7,7 @@ import {
 } from '../api/knowledge.js';
 import { getProjects } from '../api/projects.js';
 import { formatLocalDateTime } from '../utils/dateTime.js';
+import { hasValidationErrors, requiredText } from '../utils/formValidation.js';
 
 const emptyForm = {
   title: '',
@@ -15,7 +16,7 @@ const emptyForm = {
   tags: '',
 };
 
-export default function KnowledgeBase({ token, onKnowledgeChanged }) {
+export default function KnowledgeBase({ token, refreshKey, onKnowledgeChanged }) {
   const [pages, setPages] = useState([]);
   const [projects, setProjects] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -24,6 +25,7 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [status, setStatus] = useState(null);
 
   const loadPages = async (searchTerm = search) => {
@@ -33,7 +35,6 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
     try {
       const data = await getKnowledgePages(token, searchTerm);
       setPages(data.pages);
-      onKnowledgeChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -41,27 +42,36 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
     }
   };
 
-  const loadProjects = async () => {
-    try {
-      const data = await getProjects(token);
-      setProjects(data.projects);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
   useEffect(() => {
-    loadPages('');
-    loadProjects();
-  }, [token]);
+    let cancelled = false;
+
+    Promise.all([getKnowledgePages(token, ''), getProjects(token)])
+      .then(([pageData, projectData]) => {
+        if (cancelled) return;
+        setPages(pageData.pages);
+        setProjects(projectData.projects);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, refreshKey]);
 
   const updateForm = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => ({ ...current, [field]: '' }));
   };
 
   const resetForm = () => {
     setForm(emptyForm);
     setEditingId(null);
+    setFieldErrors({});
   };
 
   const handleSearch = async (event) => {
@@ -71,9 +81,20 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setSaving(true);
     setError(null);
     setStatus(null);
+
+    const nextFieldErrors = {
+      title: requiredText(form.title, 'Page title'),
+      content: requiredText(form.content, 'Page content'),
+    };
+
+    if (hasValidationErrors(nextFieldErrors)) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+
+    setSaving(true);
 
     try {
       const payload = {
@@ -92,6 +113,7 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
 
       resetForm();
       await loadPages(search);
+      onKnowledgeChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -122,6 +144,7 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
       if (editingId === page._id) resetForm();
       setStatus('Knowledge page archived.');
       await loadPages(search);
+      onKnowledgeChanged?.();
     } catch (err) {
       setError(err.message);
     }
@@ -142,7 +165,7 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
       </p>
 
       <div className="project-layout">
-        <form className="panel utility-form" onSubmit={handleSubmit}>
+        <form className="panel utility-form" noValidate onSubmit={handleSubmit}>
           <div className="control-row">
             <div>
               <h3>{editingId ? 'Edit Page' : 'Add Page'}</h3>
@@ -158,22 +181,24 @@ export default function KnowledgeBase({ token, onKnowledgeChanged }) {
           <label>
             Title
             <input
+              className={fieldErrors.title ? 'field-invalid' : ''}
               value={form.title}
               onChange={(event) => updateForm('title', event.target.value)}
               placeholder="Docker compose recovery notes"
-              required
             />
+            {fieldErrors.title && <span className="field-error">{fieldErrors.title}</span>}
           </label>
 
           <label>
             Content
             <textarea
+              className={fieldErrors.content ? 'field-invalid' : ''}
               value={form.content}
               onChange={(event) => updateForm('content', event.target.value)}
               placeholder="Write the guide, command list, or reusable note here..."
-              required
               rows={10}
             />
+            {fieldErrors.content && <span className="field-error">{fieldErrors.content}</span>}
           </label>
 
           <div className="form-grid two">

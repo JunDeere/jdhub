@@ -5,7 +5,7 @@ const CommandMessageSchema = new mongoose.Schema({
   raw_text: { type: String, required: true, trim: true },
   command_type: {
     type: String,
-    enum: ['add_note', 'create_task', 'log_expense', 'unknown'],
+    enum: ['add_note', 'create_task', 'update_task', 'log_expense', 'unknown'],
     default: 'unknown',
     index: true,
   },

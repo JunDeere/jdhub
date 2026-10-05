@@ -7,21 +7,23 @@ const moduleLabels = {
   finance: 'Finance',
   projects: 'Projects',
   knowledgeBase: 'Knowledge Base',
-  serverManager: 'Server Manager',
+  serverManager: 'Infrastructure',
   integrations: 'Integrations',
-  reminders: 'Reminders',
+  attention: 'Attention',
   scheduling: 'Scheduling',
   commandCenter: 'Command Center',
+  files: 'Files',
 };
 
 const plannedModules = [
-  ['Files', 'Planned'],
-  ['Receipts', 'Planned'],
   ['Automations', 'Planned'],
 ];
 
 function statusTone(value) {
-  if (String(value).toLowerCase().startsWith('ready')) return 'Ready';
+  const normalized = String(value).toLowerCase();
+  if (normalized.startsWith('ready')) return 'Ready';
+  if (normalized.startsWith('no ')) return 'Idle';
+  if (normalized.includes('overdue') || normalized.includes('needs attention')) return 'Needs attention';
   return 'Active';
 }
 

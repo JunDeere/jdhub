@@ -16,8 +16,12 @@ function authHeaders(token) {
   };
 }
 
-export async function getTasks(token) {
-  const response = await fetch(`${API_BASE}/api/tasks`, {
+export async function getTasks(token, { includeDone = false } = {}) {
+  const params = new URLSearchParams();
+  if (includeDone) params.set('done', 'true');
+  const query = params.size ? `?${params.toString()}` : '';
+
+  const response = await fetch(`${API_BASE}/api/tasks${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseJson(response);
@@ -45,6 +49,15 @@ export async function markTaskDone(token, id) {
   const response = await fetch(`${API_BASE}/api/tasks/${id}/done`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseJson(response);
+}
+
+export async function updateTaskStatus(token, id, status) {
+  const response = await fetch(`${API_BASE}/api/tasks/${id}/status`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify({ status }),
   });
   return parseJson(response);
 }

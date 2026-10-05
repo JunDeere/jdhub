@@ -14,7 +14,7 @@ function authHeaders(token) {
 }
 
 export async function getSchedule(token) {
-  const response = await fetch(`${API_BASE}/api/schedule`, {
+  const response = await fetch(`${API_BASE}/api/schedule?past=true&limit=150`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseJson(response);
@@ -34,6 +34,14 @@ export async function updateScheduleItem(token, id, scheduleItem) {
     method: 'PATCH',
     headers: authHeaders(token),
     body: JSON.stringify(scheduleItem),
+  });
+  return parseJson(response);
+}
+
+export async function deleteScheduleItem(token, id) {
+  const response = await fetch(`${API_BASE}/api/schedule/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
   });
   return parseJson(response);
 }

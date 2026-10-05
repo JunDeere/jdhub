@@ -30,6 +30,8 @@ mongo-data/
 postgres-data/
 mysql-data/
 uploads/
+storage/
+jdhub-cloud/
 
 # Temporary files
 .tmp/

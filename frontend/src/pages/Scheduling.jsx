@@ -1,6 +1,18 @@
-import { useEffect, useState } from 'react';
-import { createScheduleItem, getSchedule, updateScheduleItem } from '../api/schedule.js';
-import { formatLocalDateTime, localDateTimeInputToUtcIso, localTimeZone, toLocalDateTimeInput } from '../utils/dateTime.js';
+import { CalendarPlus, ChevronLeft, ChevronRight, Edit3, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  createScheduleItem,
+  deleteScheduleItem,
+  getSchedule,
+  updateScheduleItem,
+} from '../api/schedule.js';
+import {
+  formatLocalDate,
+  localDateTimeInputToUtcIso,
+  localTimeZone,
+  toLocalDateTimeInput,
+} from '../utils/dateTime.js';
+import { dateOrder, hasValidationErrors, requiredText } from '../utils/formValidation.js';
 
 const emptyForm = {
   title: '',
@@ -11,13 +23,73 @@ const emptyForm = {
   status: 'scheduled',
 };
 
-export default function Scheduling({ token, onScheduleChanged }) {
+function dateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function dateFromKey(key) {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function monthLabel(date) {
+  return new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(date);
+}
+
+function timeLabel(value) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(value));
+}
+
+function buildCalendarDays(monthDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const first = new Date(year, month, 1);
+  const start = new Date(first);
+  start.setDate(first.getDate() - first.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return {
+      date,
+      key: dateKey(date),
+      inMonth: date.getMonth() === month,
+    };
+  });
+}
+
+function formForDate(key) {
+  const date = dateFromKey(key);
+  date.setHours(9, 0, 0, 0);
+  const endDate = new Date(date);
+  endDate.setHours(10, 0, 0, 0);
+
+  return {
+    ...emptyForm,
+    start_at: toLocalDateTimeInput(date.toISOString()),
+    end_at: toLocalDateTimeInput(endDate.toISOString()),
+  };
+}
+
+export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
+  const todayKey = dateKey(new Date());
   const [scheduleItems, setScheduleItems] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(todayKey);
+  const [visibleMonth, setVisibleMonth] = useState(dateFromKey(todayKey));
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [statusMessage, setStatusMessage] = useState(null);
 
   const loadSchedule = async () => {
@@ -26,7 +98,6 @@ export default function Scheduling({ token, onScheduleChanged }) {
     try {
       const data = await getSchedule(token);
       setScheduleItems(data.scheduleItems);
-      onScheduleChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -35,44 +106,47 @@ export default function Scheduling({ token, onScheduleChanged }) {
   };
 
   useEffect(() => {
-    loadSchedule();
-  }, [token]);
+    let cancelled = false;
 
-  const updateForm = (field, value) => setForm((current) => ({ ...current, [field]: value }));
-  const resetForm = () => {
-    setForm(emptyForm);
+    getSchedule(token)
+      .then((data) => {
+        if (!cancelled) setScheduleItems(data.scheduleItems);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, refreshKey]);
+
+  const itemsByDate = useMemo(() => scheduleItems.reduce((groups, item) => {
+    const key = dateKey(item.start_at);
+    return { ...groups, [key]: [...(groups[key] || []), item] };
+  }, {}), [scheduleItems]);
+
+  const selectedItems = itemsByDate[selectedDate] || [];
+  const calendarDays = buildCalendarDays(visibleMonth);
+
+  const updateForm = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => ({ ...current, [field]: '' }));
+  };
+
+  const openCreateModal = (key = selectedDate) => {
     setEditingId(null);
-  };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setSaving(true);
-    setError(null);
+    setForm(formForDate(key));
+    setFieldErrors({});
     setStatusMessage(null);
-    try {
-      const payload = {
-        ...form,
-        start_at: localDateTimeInputToUtcIso(form.start_at),
-        end_at: localDateTimeInputToUtcIso(form.end_at),
-      };
-
-      if (editingId) {
-        await updateScheduleItem(token, editingId, payload);
-        setStatusMessage('Schedule item updated.');
-      } else {
-        await createScheduleItem(token, payload);
-        setStatusMessage('Schedule item saved.');
-      }
-      resetForm();
-      await loadSchedule();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
+    setError(null);
+    setModalOpen(true);
   };
 
-  const handleEdit = (item) => {
+  const openEditModal = (item) => {
     setEditingId(item._id);
     setForm({
       title: item.title || '',
@@ -82,6 +156,84 @@ export default function Scheduling({ token, onScheduleChanged }) {
       location: item.location || '',
       status: item.status || 'scheduled',
     });
+    setFieldErrors({});
+    setStatusMessage(null);
+    setError(null);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingId(null);
+    setForm(emptyForm);
+    setFieldErrors({});
+    setDeleting(false);
+  };
+
+  const moveMonth = (direction) => {
+    setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + direction, 1));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError(null);
+    setStatusMessage(null);
+
+    const nextFieldErrors = {
+      title: requiredText(form.title, 'Schedule title'),
+      start_at: requiredText(form.start_at, 'Start time'),
+      end_at: dateOrder(form.start_at, form.end_at, 'End time'),
+    };
+
+    if (hasValidationErrors(nextFieldErrors)) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        start_at: localDateTimeInputToUtcIso(form.start_at),
+        end_at: localDateTimeInputToUtcIso(form.end_at),
+      };
+
+      const result = editingId
+        ? await updateScheduleItem(token, editingId, payload)
+        : await createScheduleItem(token, payload);
+
+      const savedItem = result.scheduleItem;
+      const nextSelectedDate = dateKey(savedItem.start_at);
+      setSelectedDate(nextSelectedDate);
+      setVisibleMonth(dateFromKey(nextSelectedDate));
+      closeModal();
+      setStatusMessage(editingId ? 'Schedule item updated.' : 'Schedule item saved.');
+      await loadSchedule();
+      onScheduleChanged?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!editingId) return;
+    setDeleting(true);
+    setError(null);
+    setStatusMessage(null);
+
+    try {
+      await deleteScheduleItem(token, editingId);
+      closeModal();
+      setStatusMessage('Schedule item deleted.');
+      await loadSchedule();
+      onScheduleChanged?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -91,81 +243,163 @@ export default function Scheduling({ token, onScheduleChanged }) {
           <p className="eyebrow">Internal schedule</p>
           <h2>Scheduling</h2>
         </div>
-        <span className="status-pill">{scheduleItems.length} upcoming items</span>
+        <span className="status-pill">{scheduleItems.length} calendar items</span>
       </div>
 
-      <p className="module-description">Internal schedule items first. Google Calendar import/export and conflict detection come later.</p>
+      <p className="module-description">
+        Compact internal calendar. Times are saved in UTC and shown in {localTimeZone()}.
+      </p>
 
-      <div className="utility-layout">
-        <form className="panel utility-form" onSubmit={handleSubmit}>
-          <div className="control-row">
+      {error && !modalOpen && <div className="alert-error">{error}</div>}
+      {statusMessage && !modalOpen && <div className="alert-success">{statusMessage}</div>}
+
+      <div className="calendar-shell">
+        <div className="panel calendar-panel">
+          <div className="calendar-toolbar">
+            <button aria-label="Previous month" className="secondary-button" onClick={() => moveMonth(-1)} type="button">
+              <ChevronLeft size={17} />
+            </button>
             <div>
-              <h3>{editingId ? 'Edit Schedule Item' : 'Add Schedule Item'}</h3>
-              <p className="muted">Times are saved in UTC and shown in {localTimeZone()}.</p>
+              <h3>{monthLabel(visibleMonth)}</h3>
+              <span>{loading ? 'Loading calendar...' : `${scheduleItems.length} saved items`}</span>
             </div>
-            {editingId && <button className="secondary-button" onClick={resetForm} type="button">Cancel edit</button>}
+            <button aria-label="Next month" className="secondary-button" onClick={() => moveMonth(1)} type="button">
+              <ChevronRight size={17} />
+            </button>
           </div>
 
-          <label>
-            Title
-            <input value={form.title} onChange={(event) => updateForm('title', event.target.value)} required />
-          </label>
-          <label>
-            Description
-            <textarea value={form.description} onChange={(event) => updateForm('description', event.target.value)} rows={4} />
-          </label>
-          <div className="form-grid two">
-            <label>
-              Start
-              <input type="datetime-local" value={form.start_at} onChange={(event) => updateForm('start_at', event.target.value)} required />
-            </label>
-            <label>
-              End
-              <input type="datetime-local" value={form.end_at} onChange={(event) => updateForm('end_at', event.target.value)} />
-            </label>
-            <label>
-              Location
-              <input value={form.location} onChange={(event) => updateForm('location', event.target.value)} />
-            </label>
-            <label>
-              Status
-              <select value={form.status} onChange={(event) => updateForm('status', event.target.value)}>
-                {['scheduled', 'done', 'cancelled'].map((status) => <option key={status} value={status}>{status}</option>)}
-              </select>
-            </label>
+          <div className="calendar-weekdays" aria-hidden="true">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day}>{day}</span>)}
           </div>
 
-          {error && <div className="alert-error">{error}</div>}
-          {statusMessage && <div className="alert-success">{statusMessage}</div>}
-          <button className="primary-button" disabled={saving} type="submit">{saving ? 'Saving...' : editingId ? 'Update schedule item' : 'Save schedule item'}</button>
-        </form>
-
-        <div className="utility-list">
-          <div className="panel">
-            <h3>Upcoming Schedule</h3>
-            {loading ? <p className="muted">Loading schedule...</p> : scheduleItems.length === 0 ? <p className="muted">No upcoming schedule items yet.</p> : (
-              <div className="utility-stack">
-                {scheduleItems.map((item) => (
-                  <article className="utility-card" key={item._id}>
-                    <div className="task-card-header">
-                      <div>
-                        <span className="task-meta">{item.status}</span>
-                        <h4>{item.title}</h4>
-                      </div>
-                      <span className="entry-date">{formatLocalDateTime(item.start_at)}</span>
-                    </div>
-                    {item.description && <p>{item.description}</p>}
-                    {item.location && <p>Location: {item.location}</p>}
-                    <div className="entry-actions">
-                      <button className="secondary-button" onClick={() => handleEdit(item)} type="button">Edit</button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
+          <div className="calendar-grid">
+            {calendarDays.map((day) => {
+              const dayItems = itemsByDate[day.key] || [];
+              return (
+                <button
+                  className={[
+                    'calendar-day',
+                    day.inMonth ? '' : 'outside-month',
+                    day.key === todayKey ? 'today' : '',
+                    day.key === selectedDate ? 'selected' : '',
+                  ].filter(Boolean).join(' ')}
+                  key={day.key}
+                  onClick={() => {
+                    setSelectedDate(day.key);
+                    setStatusMessage(null);
+                  }}
+                  type="button"
+                >
+                  <span>{day.date.getDate()}</span>
+                  {dayItems.length > 0 && <strong>{dayItems.length}</strong>}
+                </button>
+              );
+            })}
           </div>
         </div>
+
+        <div className="panel selected-day-panel">
+          <div className="control-row">
+            <div>
+              <h3>{formatLocalDate(dateFromKey(selectedDate), 'Selected day')}</h3>
+              <p className="muted">{selectedItems.length ? `${selectedItems.length} schedule item${selectedItems.length === 1 ? '' : 's'}` : 'No items for this day.'}</p>
+            </div>
+            <button className="primary-button" onClick={() => openCreateModal(selectedDate)} type="button">
+              <CalendarPlus size={17} />
+              Add
+            </button>
+          </div>
+
+          {selectedItems.length ? (
+            <div className="schedule-agenda">
+              {selectedItems.map((item) => (
+                <article className="schedule-agenda-item" key={item._id}>
+                  <div>
+                    <span>{timeLabel(item.start_at)}{item.end_at ? ` - ${timeLabel(item.end_at)}` : ''}</span>
+                    <strong>{item.title}</strong>
+                    {item.location && <small>{item.location}</small>}
+                    {item.description && <p>{item.description}</p>}
+                  </div>
+                  <button className="secondary-button" onClick={() => openEditModal(item)} type="button">
+                    <Edit3 size={16} />
+                    Edit
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="schedule-empty">
+              <CalendarPlus size={24} />
+              <p>No schedule items on this day.</p>
+            </div>
+          )}
+        </div>
       </div>
+
+      {modalOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <form className="modal-card schedule-modal utility-form" noValidate onSubmit={handleSubmit}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">{editingId ? 'Edit schedule' : 'Add schedule'}</p>
+                <h3>{editingId ? 'Edit Schedule Item' : 'New Schedule Item'}</h3>
+              </div>
+              <button aria-label="Close schedule modal" className="icon-only-button" onClick={closeModal} type="button">
+                <X size={18} />
+              </button>
+            </div>
+
+            <label>
+              Title
+              <input className={fieldErrors.title ? 'field-invalid' : ''} value={form.title} onChange={(event) => updateForm('title', event.target.value)} />
+              {fieldErrors.title && <span className="field-error">{fieldErrors.title}</span>}
+            </label>
+
+            <label>
+              Description
+              <textarea value={form.description} onChange={(event) => updateForm('description', event.target.value)} rows={4} />
+            </label>
+
+            <div className="form-grid two">
+              <label>
+                Start
+                <input className={fieldErrors.start_at ? 'field-invalid' : ''} type="datetime-local" value={form.start_at} onChange={(event) => updateForm('start_at', event.target.value)} />
+                {fieldErrors.start_at && <span className="field-error">{fieldErrors.start_at}</span>}
+              </label>
+              <label>
+                End
+                <input className={fieldErrors.end_at ? 'field-invalid' : ''} type="datetime-local" value={form.end_at} onChange={(event) => updateForm('end_at', event.target.value)} />
+                {fieldErrors.end_at && <span className="field-error">{fieldErrors.end_at}</span>}
+              </label>
+              <label>
+                Location
+                <input value={form.location} onChange={(event) => updateForm('location', event.target.value)} />
+              </label>
+              <label>
+                Status
+                <select value={form.status} onChange={(event) => updateForm('status', event.target.value)}>
+                  {['scheduled', 'done', 'cancelled'].map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </label>
+            </div>
+
+            {error && <div className="alert-error">{error}</div>}
+
+            <div className="modal-actions">
+              {editingId && (
+                <button className="danger-button" disabled={deleting || saving} onClick={handleDelete} type="button">
+                  <Trash2 size={16} />
+                  {deleting ? 'Deleting...' : 'Delete'}
+                </button>
+              )}
+              <button className="secondary-button" onClick={closeModal} type="button">Cancel</button>
+              <button className="primary-button" disabled={saving || deleting} type="submit">
+                {saving ? 'Saving...' : editingId ? 'Update' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </section>
   );
 }

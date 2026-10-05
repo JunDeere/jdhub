@@ -78,6 +78,15 @@ router.post('/', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   try {
+    const desktopBackup = await Entry.exists({
+      _id: req.params.id,
+      user_id: req.userId,
+      'metadata.desktop_read_only': true,
+    });
+    if (desktopBackup) {
+      return res.status(409).json({ error: 'Windows Notepad backups are read-only. Make an editable web copy instead.' });
+    }
+
     const payload = entryPayload(req.body);
     if (!payload.title) {
       return res.status(400).json({ error: 'Title is required' });
@@ -99,6 +108,15 @@ router.patch('/:id', async (req, res) => {
 
 router.patch('/:id/archive', async (req, res) => {
   try {
+    const desktopBackup = await Entry.exists({
+      _id: req.params.id,
+      user_id: req.userId,
+      'metadata.desktop_read_only': true,
+    });
+    if (desktopBackup) {
+      return res.status(409).json({ error: 'Windows Notepad backups are managed by the desktop bridge.' });
+    }
+
     const entry = await Entry.findOneAndUpdate(
       { _id: req.params.id, user_id: req.userId },
       { archived_at: nowUtc() },

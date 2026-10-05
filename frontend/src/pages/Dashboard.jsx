@@ -1,9 +1,38 @@
-import { Bell, ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  Bell,
+  BookOpen,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  CheckCircle2,
+  CircleDollarSign,
+  Clock3,
+  ClipboardList,
+  FileText,
+  FolderKanban,
+  Eye,
+  EyeOff,
+  Plug,
+  SearchCheck,
+  Server,
+  Settings,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getDashboard } from '../api/auth.js';
 import { formatLocalDate, formatLocalDateTime } from '../utils/dateTime.js';
 
 const ONBOARDING_KEY = 'jdhubDashboardOnboardingOpen';
+const METRICS_VISIBILITY_KEY = 'jdhubDashboardMetricsVisible';
+const MONEY_VISIBILITY_KEY = 'jdhubDashboardMoneyVisibility';
+const BRIEF_OPTIONS = [
+  { id: 'today', label: 'Today' },
+  { id: 'tomorrow', label: 'Tomorrow' },
+  { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
+  { id: 'next-month', label: 'Next month' },
+];
 
 function money(value, currency = 'PHP') {
   return new Intl.NumberFormat(undefined, {
@@ -13,21 +42,295 @@ function money(value, currency = 'PHP') {
   }).format(Number(value || 0));
 }
 
-function EmptyState({ message, action, onAction }) {
-  return (
-    <div className="empty-state">
-      <p className="muted">{message}</p>
-      <button className="secondary-button" onClick={onAction} type="button">
-        {action}
-      </button>
-    </div>
-  );
+function getInitialMoneyVisibility() {
+  const legacyVisible = localStorage.getItem(METRICS_VISIBILITY_KEY) !== 'false';
+  const fallback = { income: legacyVisible, expense: legacyVisible, net: legacyVisible };
+  const saved = localStorage.getItem(MONEY_VISIBILITY_KEY);
+  if (!saved) return fallback;
+
+  try {
+    const parsed = JSON.parse(saved);
+    return {
+      income: parsed.income !== false,
+      expense: parsed.expense !== false,
+      net: parsed.net !== false,
+    };
+  } catch {
+    return fallback;
+  }
 }
 
-export default function Dashboard({ token, refreshKey, onNavigate }) {
+const quickActions = [
+  { label: 'Command', detail: 'Create or search', page: 'command-center', icon: SearchCheck, featured: true },
+  { label: 'Add note', detail: 'Write now', page: 'life-log', icon: FileText },
+  { label: 'Add task', detail: 'Track work', page: 'tasks', icon: ClipboardList },
+  { label: 'Add schedule', detail: 'Plan time', page: 'scheduling', icon: CalendarDays },
+  { label: 'Money', detail: 'Log cash', page: 'finance', icon: CircleDollarSign },
+];
+
+const homeTools = [
+  { label: 'Project', page: 'projects', icon: FolderKanban },
+  { label: 'Page', page: 'knowledge-base', icon: BookOpen },
+  { label: 'Infrastructure', page: 'server-manager', icon: Server, adminOnly: true },
+  { label: 'Integrations', page: 'integrations', icon: Plug, adminOnly: true },
+  { label: 'Status', page: 'module-status', icon: Activity },
+  { label: 'Settings', page: 'settings', icon: Settings },
+];
+
+function startOfLocalDay(date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function addMonths(date, months) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function getDefaultBriefId() {
+  return new Date().getHours() >= 18 ? 'tomorrow' : 'today';
+}
+
+function getBriefWindow(briefId) {
+  const now = new Date();
+  const today = startOfLocalDay(now);
+
+  if (briefId === 'tomorrow') {
+    const start = addDays(today, 1);
+    return {
+      id: briefId,
+      label: 'Tomorrow',
+      start,
+      end: addDays(start, 1),
+    };
+  }
+
+  if (briefId === 'week') {
+    const start = addDays(today, -((today.getDay() + 6) % 7));
+    return {
+      id: briefId,
+      label: 'This week',
+      start,
+      end: addDays(start, 7),
+    };
+  }
+
+  if (briefId === 'month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    return {
+      id: briefId,
+      label: 'This month',
+      start,
+      end: addMonths(start, 1),
+    };
+  }
+
+  if (briefId === 'next-month') {
+    const start = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    return {
+      id: briefId,
+      label: 'Next month',
+      start,
+      end: addMonths(start, 1),
+    };
+  }
+
+  return {
+    id: 'today',
+    label: 'Today',
+    start: today,
+    end: addDays(today, 1),
+  };
+}
+
+function isInWindow(value, window, includePastDue = false) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  if (includePastDue && date < window.start) return true;
+  return date >= window.start && date < window.end;
+}
+
+function buildBriefSignals(dashboard, briefWindow) {
+  if (!dashboard) return [];
+
+  const includePastDue = briefWindow.id === 'today';
+  const items = [];
+
+  dashboard.dueTasks?.forEach((task) => {
+    if (!isInWindow(task.due_date, briefWindow, includePastDue)) return;
+
+    const dueDate = new Date(task.due_date);
+    const overdue = dueDate < briefWindow.start;
+
+    items.push({
+      id: `brief-task-${task._id}`,
+      title: task.title,
+      detail: overdue ? `Overdue since ${formatLocalDate(task.due_date)}.` : `Due ${formatLocalDate(task.due_date)}.`,
+      action: 'Open Tasks',
+      page: 'tasks',
+      when: dueDate.getTime(),
+      priority: overdue ? 0 : 1,
+    });
+  });
+
+  dashboard.upcomingSchedule?.forEach((item) => {
+    if (!isInWindow(item.start_at, briefWindow)) return;
+
+    items.push({
+      id: `brief-schedule-${item._id}`,
+      title: item.title,
+      detail: formatLocalDateTime(item.start_at),
+      action: 'Open Scheduling',
+      page: 'scheduling',
+      when: new Date(item.start_at).getTime(),
+      priority: 2,
+    });
+  });
+
+  return items.sort((a, b) => a.priority - b.priority || a.when - b.when);
+}
+
+function buildDailyBrief(dashboard, briefWindow, briefSignals) {
+  if (!dashboard) {
+    return {
+      icon: Clock3,
+      tone: 'quiet',
+      eyebrow: 'Brief',
+      title: 'Loading',
+      detail: 'Checking tasks, schedule, notes, and system signals.',
+      action: 'Open Command Center',
+      page: 'command-center',
+    };
+  }
+
+  const hasAnyRecords = Boolean(
+    dashboard.recentEntries?.length ||
+    dashboard.openTasks?.length ||
+    dashboard.activeProjects?.length ||
+    dashboard.recentKnowledgePages?.length ||
+    dashboard.upcomingSchedule?.length ||
+    dashboard.financeSummary?.income ||
+    dashboard.financeSummary?.expense,
+  );
+
+  if (briefSignals.length) {
+    return {
+      icon: AlertTriangle,
+      tone: 'warning',
+      eyebrow: 'Brief',
+      title: briefSignals.length === 1 ? 'One thing needs review' : `${briefSignals.length} things need review`,
+      detail: briefSignals[0].detail,
+      action: briefSignals[0].action,
+      page: briefSignals[0].page,
+    };
+  }
+
+  if (!hasAnyRecords) {
+    return {
+      icon: Clock3,
+      tone: 'quiet',
+      eyebrow: 'Brief',
+      title: 'Nothing scheduled',
+      detail: 'Start by adding a note, task, schedule item, transaction, or project from quick actions.',
+      action: 'Open Command Center',
+      page: 'command-center',
+    };
+  }
+
+  if (dashboard.openTasks?.length) {
+    return {
+      icon: ClipboardList,
+      tone: 'active',
+      eyebrow: `${dashboard.openTasks.length} open task${dashboard.openTasks.length === 1 ? '' : 's'}`,
+      title: 'Work queue is ready',
+      detail: dashboard.openTasks[0].due_date
+        ? `${dashboard.openTasks[0].title} is next, due ${formatLocalDate(dashboard.openTasks[0].due_date)}.`
+        : `${dashboard.openTasks[0].title} is the next task without a due date.`,
+      action: 'Open Tasks',
+      page: 'tasks',
+    };
+  }
+
+  if (dashboard.upcomingSchedule?.length) {
+    return {
+      icon: CalendarDays,
+      tone: 'active',
+      eyebrow: 'Next schedule',
+      title: dashboard.upcomingSchedule[0].title,
+      detail: formatLocalDateTime(dashboard.upcomingSchedule[0].start_at),
+      action: 'Open Scheduling',
+      page: 'scheduling',
+    };
+  }
+
+  return {
+    icon: CheckCircle2,
+    tone: 'clear',
+    eyebrow: 'Brief',
+    title: 'Clear',
+    detail: `No due tasks or schedule items found for ${briefWindow.label.toLowerCase()}. Use quick actions when you want to add the next record.`,
+    action: 'Add something',
+    page: 'command-center',
+  };
+}
+
+function buildActivityItems(dashboard) {
+  if (!dashboard) return [];
+
+  return [
+    dashboard.recentEntries?.[0] && {
+      id: `note-${dashboard.recentEntries[0]._id}`,
+      label: 'Latest note',
+      title: dashboard.recentEntries[0].title,
+      detail: formatLocalDateTime(dashboard.recentEntries[0].createdAt),
+      page: 'life-log',
+    },
+    dashboard.openTasks?.[0] && {
+      id: `task-${dashboard.openTasks[0]._id}`,
+      label: 'Next task',
+      title: dashboard.openTasks[0].title,
+      detail: dashboard.openTasks[0].due_date ? formatLocalDate(dashboard.openTasks[0].due_date) : 'No due date',
+      page: 'tasks',
+    },
+    dashboard.upcomingSchedule?.[0] && {
+      id: `schedule-${dashboard.upcomingSchedule[0]._id}`,
+      label: 'Next schedule',
+      title: dashboard.upcomingSchedule[0].title,
+      detail: formatLocalDateTime(dashboard.upcomingSchedule[0].start_at),
+      page: 'scheduling',
+    },
+    dashboard.activeProjects?.[0] && {
+      id: `project-${dashboard.activeProjects[0]._id}`,
+      label: 'Active project',
+      title: dashboard.activeProjects[0].name,
+      detail: `${dashboard.activeProjects[0].priority} priority / ${dashboard.activeProjects[0].status}`,
+      page: 'projects',
+    },
+    dashboard.recentKnowledgePages?.[0] && {
+      id: `knowledge-${dashboard.recentKnowledgePages[0]._id}`,
+      label: 'Knowledge page',
+      title: dashboard.recentKnowledgePages[0].title,
+      detail: formatLocalDateTime(dashboard.recentKnowledgePages[0].updatedAt || dashboard.recentKnowledgePages[0].createdAt),
+      page: 'knowledge-base',
+    },
+  ].filter(Boolean);
+}
+
+export default function Dashboard({ token, user, refreshKey, onNavigate }) {
   const [dashboard, setDashboard] = useState(null);
   const [error, setError] = useState(null);
   const [onboardingOpen, setOnboardingOpen] = useState(localStorage.getItem(ONBOARDING_KEY) === 'true');
+  const [briefId, setBriefId] = useState(getDefaultBriefId);
+  const [moneyVisibility, setMoneyVisibility] = useState(getInitialMoneyVisibility);
 
   useEffect(() => {
     let active = true;
@@ -48,6 +351,14 @@ export default function Dashboard({ token, refreshKey, onNavigate }) {
   useEffect(() => {
     localStorage.setItem(ONBOARDING_KEY, String(onboardingOpen));
   }, [onboardingOpen]);
+
+  useEffect(() => {
+    localStorage.setItem(MONEY_VISIBILITY_KEY, JSON.stringify(moneyVisibility));
+  }, [moneyVisibility]);
+
+  const toggleMoneyVisibility = (metric) => {
+    setMoneyVisibility((current) => ({ ...current, [metric]: !current[metric] }));
+  };
 
   const onboardingItems = dashboard ? [
     {
@@ -83,15 +394,22 @@ export default function Dashboard({ token, refreshKey, onNavigate }) {
   ] : [];
 
   const completedOnboarding = onboardingItems.filter((item) => item.done).length;
+  const briefWindow = getBriefWindow(briefId);
+  const briefSignals = buildBriefSignals(dashboard, briefWindow);
+  const dailyBrief = buildDailyBrief(dashboard, briefWindow, briefSignals);
+  const DailyBriefIcon = dailyBrief.icon;
+  const activityItems = buildActivityItems(dashboard);
 
   return (
     <section className="dashboard-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Overview</p>
-          <h2>Dashboard</h2>
+          <p className="eyebrow">Home</p>
+          <h2>Home</h2>
         </div>
-        <span className="status-pill">Protected</span>
+        <div className="dashboard-heading-actions">
+          <span className="status-pill">Protected</span>
+        </div>
       </div>
 
       {error && <div className="alert-error">{error}</div>}
@@ -124,18 +442,76 @@ export default function Dashboard({ token, refreshKey, onNavigate }) {
             )}
           </div>
 
+          <div className="home-shortcuts" aria-label="Quick actions">
+            <div className="home-shortcuts-header">
+              <strong>Quick actions</strong>
+              <small>Start here</small>
+            </div>
+            <div className="quick-action-grid">
+              {quickActions.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <button
+                    className={item.featured ? 'featured' : ''}
+                    key={item.page}
+                    onClick={() => onNavigate(item.page)}
+                    type="button"
+                  >
+                    <span>
+                      <Icon aria-hidden="true" size={20} />
+                    </span>
+                    <div>
+                      <strong>{item.label}</strong>
+                      <small>{item.detail}</small>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="home-tool-rail" aria-label="More tools">
+              {homeTools.filter((item) => !item.adminOnly || user?.role === 'admin').map((item) => {
+              const Icon = item.icon;
+
+              return (
+                <button key={item.page} onClick={() => onNavigate(item.page)} type="button">
+                  <span>
+                    <Icon aria-hidden="true" size={18} />
+                  </span>
+                  <strong>{item.label}</strong>
+                </button>
+              );
+            })}
+            </div>
+          </div>
+
           <div className="metric-grid">
-            <div className="metric-card">
+            <div className="metric-card money-metric-card">
               <span>Monthly income</span>
-              <strong>{money(dashboard.financeSummary?.income)}</strong>
+              <div className="metric-card-value">
+                <strong aria-label={moneyVisibility.income ? undefined : 'Monthly income hidden'}>{moneyVisibility.income ? money(dashboard.financeSummary?.income) : '••••'}</strong>
+                <button aria-label={moneyVisibility.income ? 'Hide monthly income' : 'Show monthly income'} aria-pressed={!moneyVisibility.income} className="metric-privacy-toggle" onClick={() => toggleMoneyVisibility('income')} title={moneyVisibility.income ? 'Hide monthly income' : 'Show monthly income'} type="button">
+                  {moneyVisibility.income ? <EyeOff aria-hidden="true" size={14} /> : <Eye aria-hidden="true" size={14} />}
+                </button>
+              </div>
             </div>
-            <div className="metric-card">
+            <div className="metric-card money-metric-card">
               <span>Monthly expense</span>
-              <strong>{money(dashboard.financeSummary?.expense)}</strong>
+              <div className="metric-card-value">
+                <strong aria-label={moneyVisibility.expense ? undefined : 'Monthly expense hidden'}>{moneyVisibility.expense ? money(dashboard.financeSummary?.expense) : '••••'}</strong>
+                <button aria-label={moneyVisibility.expense ? 'Hide monthly expense' : 'Show monthly expense'} aria-pressed={!moneyVisibility.expense} className="metric-privacy-toggle" onClick={() => toggleMoneyVisibility('expense')} title={moneyVisibility.expense ? 'Hide monthly expense' : 'Show monthly expense'} type="button">
+                  {moneyVisibility.expense ? <EyeOff aria-hidden="true" size={14} /> : <Eye aria-hidden="true" size={14} />}
+                </button>
+              </div>
             </div>
-            <div className="metric-card">
+            <div className="metric-card money-metric-card">
               <span>Monthly net</span>
-              <strong>{money(dashboard.financeSummary?.net)}</strong>
+              <div className="metric-card-value">
+                <strong aria-label={moneyVisibility.net ? undefined : 'Monthly net hidden'}>{moneyVisibility.net ? money(dashboard.financeSummary?.net) : '••••'}</strong>
+                <button aria-label={moneyVisibility.net ? 'Hide monthly net' : 'Show monthly net'} aria-pressed={!moneyVisibility.net} className="metric-privacy-toggle" onClick={() => toggleMoneyVisibility('net')} title={moneyVisibility.net ? 'Hide monthly net' : 'Show monthly net'} type="button">
+                  {moneyVisibility.net ? <EyeOff aria-hidden="true" size={14} /> : <Eye aria-hidden="true" size={14} />}
+                </button>
+              </div>
             </div>
             <div className="metric-card">
               <span>Open tasks</span>
@@ -151,129 +527,67 @@ export default function Dashboard({ token, refreshKey, onNavigate }) {
             </div>
           </div>
 
-          <div className="dashboard-grid">
-            <div className="panel">
-              <h3>Upcoming Reminders</h3>
-              {dashboard.upcomingReminders?.length ? (
-                <div className="compact-entry-list">
-                  {dashboard.upcomingReminders.map((reminder) => (
-                    <article key={reminder._id}>
-                      <strong>{reminder.title}</strong>
-                      <span>{formatLocalDateTime(reminder.remind_at)}</span>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  message="No upcoming reminders."
-                  action="Add reminder"
-                  onAction={() => onNavigate('reminders')}
-                />
-              )}
+          <div className={`panel daily-brief ${dailyBrief.tone}`}>
+            <div className="daily-brief-main">
+              <span className="daily-brief-icon">
+                <DailyBriefIcon aria-hidden="true" size={22} />
+              </span>
+              <div>
+                <p className="eyebrow">{dailyBrief.eyebrow}</p>
+                <h3>{dailyBrief.title}</h3>
+                <p className="muted">{dailyBrief.detail}</p>
+              </div>
+              <button className="secondary-button" onClick={() => onNavigate(dailyBrief.page)} type="button">
+                {dailyBrief.action}
+              </button>
             </div>
 
-            <div className="panel">
-              <h3>Recent Notes</h3>
-              {dashboard.recentEntries?.length ? (
-                <div className="compact-entry-list">
-                  {dashboard.recentEntries.map((entry) => (
-                    <article key={entry._id}>
-                      <strong>{entry.title}</strong>
-                      <span>{entry.category} / {formatLocalDateTime(entry.createdAt)}</span>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  message="No notes yet."
-                  action="Write note"
-                  onAction={() => onNavigate('life-log')}
-                />
-              )}
+            <div className="brief-window-control" aria-label="Brief window">
+              {BRIEF_OPTIONS.map((option) => (
+                <button
+                  className={option.id === briefId ? 'selected' : ''}
+                  key={option.id}
+                  onClick={() => setBriefId(option.id)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
 
-            <div className="panel">
-              <h3>Open Tasks</h3>
-              {dashboard.openTasks?.length ? (
-                <div className="compact-entry-list">
-                  {dashboard.openTasks.map((task) => (
-                    <article key={task._id}>
-                      <strong>{task.title}</strong>
-                      <span>
-                        {task.priority} priority / {task.due_date
-                          ? formatLocalDate(task.due_date)
-                          : 'No due date'}
-                      </span>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  message="No open tasks yet."
-                  action="Create task"
-                  onAction={() => onNavigate('tasks')}
-                />
-              )}
-            </div>
+            <div className="daily-brief-body">
+              <div className="daily-brief-section">
+                <strong>Attention</strong>
+                {briefSignals.length ? (
+                  <div className="attention-strip">
+                    {briefSignals.slice(0, 3).map((item) => (
+                      <button key={item.id} onClick={() => onNavigate(item.page)} type="button">
+                        <span>{item.title}</span>
+                        <small>{item.detail}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No task or schedule signals in this brief. Urgent items still appear in the notification bell.</p>
+                )}
+              </div>
 
-            <div className="panel">
-              <h3>Upcoming Schedule</h3>
-              {dashboard.upcomingSchedule?.length ? (
-                <div className="compact-entry-list">
-                  {dashboard.upcomingSchedule.map((item) => (
-                    <article key={item._id}>
-                      <strong>{item.title}</strong>
-                      <span>{formatLocalDateTime(item.start_at)}</span>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  message="No upcoming schedule items."
-                  action="Add schedule"
-                  onAction={() => onNavigate('scheduling')}
-                />
-              )}
-            </div>
-
-            <div className="panel">
-              <h3>Active Projects</h3>
-              {dashboard.activeProjects?.length ? (
-                <div className="compact-entry-list">
-                  {dashboard.activeProjects.map((project) => (
-                    <article key={project._id}>
-                      <strong>{project.name}</strong>
-                      <span>{project.priority} priority / {project.status}</span>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  message="No active projects yet."
-                  action="Create project"
-                  onAction={() => onNavigate('projects')}
-                />
-              )}
-            </div>
-
-            <div className="panel">
-              <h3>Knowledge Base</h3>
-              {dashboard.recentKnowledgePages?.length ? (
-                <div className="compact-entry-list">
-                  {dashboard.recentKnowledgePages.map((page) => (
-                    <article key={page._id}>
-                      <strong>{page.title}</strong>
-                      <span>{formatLocalDateTime(page.updatedAt || page.createdAt)}</span>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  message="No knowledge pages yet."
-                  action="Create page"
-                  onAction={() => onNavigate('knowledge-base')}
-                />
-              )}
+              <div className="daily-brief-section">
+                <strong>Latest movement</strong>
+                {activityItems.length ? (
+                  <div className="activity-strip">
+                    {activityItems.slice(0, 4).map((item) => (
+                      <button key={item.id} onClick={() => onNavigate(item.page)} type="button">
+                        <small>{item.label}</small>
+                        <span>{item.title}</span>
+                        <em>{item.detail}</em>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No records yet. Quick actions are the fastest way to start filling the workspace.</p>
+                )}
+              </div>
             </div>
           </div>
         </>

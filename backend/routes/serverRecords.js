@@ -1,6 +1,7 @@
 const express = require('express');
 const ServerRecord = require('../models/ServerRecord');
 const authMiddleware = require('../middleware/auth');
+const requireAdmin = require('../middleware/requireAdmin');
 const { nowUtc, parseOptionalUtcDate } = require('../utils/dateTime');
 
 const router = express.Router();
@@ -35,7 +36,7 @@ function recordPayload(body) {
   };
 }
 
-router.use(authMiddleware);
+router.use(authMiddleware, requireAdmin);
 
 router.get('/', async (req, res) => {
   try {

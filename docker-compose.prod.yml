@@ -1,0 +1,30 @@
+services:
+  backend:
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - TRUST_PROXY=1
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
+      - AUTH_RATE_LIMIT_WINDOW_MS=${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
+      - AUTH_RATE_LIMIT_MAX=${AUTH_RATE_LIMIT_MAX:-10}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
+      - CORS_ORIGINS=${CORS_ORIGINS:?Set CORS_ORIGINS to your production origin}
+      - JWT_SECRET=${JWT_SECRET:?Set a strong JWT_SECRET before production deploy}
+      - MONGO_URI=${MONGO_URI:-mongodb://mongo:27017/jdhub}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-openrouter/free}
+      - OPENROUTER_SITE_URL=${OPENROUTER_SITE_URL:-https://jdhub.example.com}
+      - OPENROUTER_SITE_NAME=${OPENROUTER_SITE_NAME:-JDHub}
+
+  frontend:
+    restart: unless-stopped
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_BASE=${VITE_API_BASE:-}
+        - VITE_ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
+
+  mongo:
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db

@@ -23,6 +23,13 @@ export async function getCommandHistory(token) {
   return parseJson(response);
 }
 
+export async function getAssistantConversation(token) {
+  const response = await fetch(`${API_BASE}/api/commands/conversation`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseJson(response);
+}
+
 export async function previewCommand(token, rawText) {
   const response = await fetch(`${API_BASE}/api/commands/preview`, {
     method: 'POST',
@@ -45,6 +52,15 @@ export async function cancelCommand(token, id) {
   const response = await fetch(`${API_BASE}/api/commands/${id}/cancel`, {
     method: 'POST',
     headers: authHeaders(token),
+  });
+  return parseJson(response);
+}
+
+export async function askCommandAi(token, question) {
+  const response = await fetch(`${API_BASE}/api/commands/ai`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify({ question }),
   });
   return parseJson(response);
 }

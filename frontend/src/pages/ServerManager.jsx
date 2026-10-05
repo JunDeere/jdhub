@@ -6,6 +6,7 @@ import {
   updateServerRecord,
 } from '../api/serverRecords.js';
 import { formatLocalDateTime, localDateTimeInputToUtcIso, toLocalDateTimeInput } from '../utils/dateTime.js';
+import { hasValidationErrors, positiveNumber, requiredText } from '../utils/formValidation.js';
 
 const recordTypes = ['server_note', 'incident_log', 'container_record', 'port_record'];
 const statuses = ['active', 'planned', 'watching', 'resolved', 'inactive'];
@@ -27,13 +28,14 @@ function label(value) {
   return value.replaceAll('_', ' ');
 }
 
-export default function ServerManager({ token, onServerRecordsChanged }) {
+export default function ServerManager({ token, refreshKey, onServerRecordsChanged }) {
   const [records, setRecords] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [statusMessage, setStatusMessage] = useState(null);
 
   const counts = useMemo(() => records.reduce((summary, record) => {
@@ -48,7 +50,6 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
     try {
       const data = await getServerRecords(token);
       setRecords(data.records);
-      onServerRecordsChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -57,23 +58,52 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
   };
 
   useEffect(() => {
-    loadRecords();
-  }, [token]);
+    let cancelled = false;
+
+    getServerRecords(token)
+      .then((data) => {
+        if (!cancelled) setRecords(data.records);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, refreshKey]);
 
   const updateForm = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => ({ ...current, [field]: '' }));
   };
 
   const resetForm = () => {
     setForm(emptyForm);
     setEditingId(null);
+    setFieldErrors({});
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setSaving(true);
     setError(null);
     setStatusMessage(null);
+
+    const portMessage = form.port ? positiveNumber(form.port, 'Port') : '';
+    const nextFieldErrors = {
+      name: requiredText(form.name, 'Record name'),
+      port: portMessage || (Number(form.port) > 65535 ? 'Port must be 65535 or lower.' : ''),
+    };
+
+    if (hasValidationErrors(nextFieldErrors)) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+
+    setSaving(true);
 
     try {
       const payload = {
@@ -93,6 +123,7 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
 
       resetForm();
       await loadRecords();
+      onServerRecordsChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -127,6 +158,7 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
       if (editingId === record._id) resetForm();
       setStatusMessage('Server record archived.');
       await loadRecords();
+      onServerRecordsChanged?.();
     } catch (err) {
       setError(err.message);
     }
@@ -137,13 +169,13 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
       <div className="page-heading">
         <div>
           <p className="eyebrow">Infrastructure records</p>
-          <h2>Server Manager</h2>
+          <h2>Infrastructure</h2>
         </div>
         <span className="status-pill">{records.length} manual records</span>
       </div>
 
       <p className="module-description">
-        Document infrastructure manually: server notes, incidents, containers, and ports. This page does not run commands or control containers.
+        Maintain administrative records for servers, incidents, containers, and ports. This page does not run commands or control containers.
       </p>
 
       <div className="metric-grid">
@@ -156,7 +188,7 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
       </div>
 
       <div className="utility-layout">
-        <form className="panel utility-form" onSubmit={handleSubmit}>
+        <form className="panel utility-form" noValidate onSubmit={handleSubmit}>
           <div className="control-row">
             <div>
               <h3>{editingId ? 'Edit Record' : 'Add Record'}</h3>
@@ -191,7 +223,8 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
 
           <label>
             Name
-            <input value={form.name} onChange={(event) => updateForm('name', event.target.value)} placeholder="Acer server nginx" required />
+            <input className={fieldErrors.name ? 'field-invalid' : ''} value={form.name} onChange={(event) => updateForm('name', event.target.value)} placeholder="Acer server nginx" />
+            {fieldErrors.name && <span className="field-error">{fieldErrors.name}</span>}
           </label>
 
           <div className="form-grid two">
@@ -201,7 +234,8 @@ export default function ServerManager({ token, onServerRecordsChanged }) {
             </label>
             <label>
               Port
-              <input type="number" min="1" max="65535" value={form.port} onChange={(event) => updateForm('port', event.target.value)} placeholder="5173" />
+              <input className={fieldErrors.port ? 'field-invalid' : ''} type="number" min="1" max="65535" value={form.port} onChange={(event) => updateForm('port', event.target.value)} placeholder="5173" />
+              {fieldErrors.port && <span className="field-error">{fieldErrors.port}</span>}
             </label>
             <label>
               Service

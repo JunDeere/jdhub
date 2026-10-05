@@ -105,6 +105,38 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
+router.patch('/:id/status', async (req, res) => {
+  try {
+    const status = req.body?.status;
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid task status' });
+    }
+
+    const update = { $set: { status }, $unset: {} };
+    if (status === 'done') {
+      update.$set.completed_at = nowUtc();
+      update.$unset.cancelled_at = 1;
+    } else if (status === 'cancelled') {
+      update.$set.cancelled_at = nowUtc();
+      update.$unset.completed_at = 1;
+    } else {
+      update.$unset.completed_at = 1;
+      update.$unset.cancelled_at = 1;
+    }
+
+    const task = await Task.findOneAndUpdate(
+      { _id: req.params.id, user_id: req.userId },
+      update,
+      { returnDocument: 'after' },
+    ).populate('related_project_id', 'name status');
+
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    return res.json({ task });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 router.patch('/:id/done', async (req, res) => {
   try {
     const task = await Task.findOneAndUpdate(

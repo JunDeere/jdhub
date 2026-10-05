@@ -22,6 +22,454 @@ New entries should go at the top of the journal section.
 
 ---
 
+## 2026-10-05 - Product Versioning Established
+
+### What We Worked On
+
+We replaced the conflicting backend `1.0.0` and frontend `0.0.0` placeholders
+with one JDHub product version before preparing the next push.
+
+### What We Finished
+
+- Set the current development version to `0.2.0-beta.1`.
+- Added a canonical root `VERSION` file.
+- Aligned the frontend and backend package manifests and lockfiles.
+- Added a Semantic Versioning and release policy.
+- Added a changelog covering the MVP 1 foundation and current MVP 2 prerelease.
+- Linked the version and release documents from the README.
+
+### What Changed From Discussion
+
+MVP 2 has substantial working functionality, but it is still undergoing review
+and should not be presented as stable `1.0.0`. A beta version communicates that
+state more honestly while giving future commits and deployments clear release
+identities.
+
+### Verification
+
+- Confirmed the repository previously had no Git version tags.
+- Confirmed all JDHub package manifests now use the same product version.
+- No commit, tag, push, or server deployment was performed.
+
+### Possible Next Steps
+
+- Finish synchronizing the roadmap and operational documentation.
+- Run the full release checks before staging.
+- Create the first annotated version tag only after the release commit is
+  reviewed and approved.
+
+---
+
+## 2026-10-05 - MVP 2 Consolidation Checkpoint
+
+### What We Worked On
+
+We reviewed and expanded JDHub as a multi-user private command center instead of
+leaving the modules as disconnected MVP forms. The work focused on making the
+product safer, more responsive, and more natural to use before the next push.
+
+### What We Finished
+
+#### Administration and Security
+
+- Replaced public account creation with admin-managed member accounts.
+- Added account listing plus member enable/disable controls.
+- Added active account status enforcement and protected administrator access.
+- Added email verification for sign-ins from new browsers using configured SMTP.
+- Added trusted-browser, trusted-network, and security-event views.
+- Kept IP information as a monitoring signal rather than an authentication
+  substitute.
+
+#### Files Workspace
+
+- Turned Files into a private cloud-style workspace backed by server storage.
+- Added user-isolated physical storage, a 300 GB shared ceiling, and a default
+  10 GB member allowance; administrators see combined pool usage.
+- Added upload inspection, executable-content detection, hashing, and private
+  incoming-file handling.
+- Added folders, inline create/rename behavior, current-folder uploads, external
+  drag-and-drop uploads, upload progress, full-name tooltips, multi-selection,
+  and internal drag-to-folder movement.
+- Added file and folder downloads, including folder archive downloads.
+- Added restricted sharing and revocable public links with a maximum 24-hour
+  lifetime.
+- Kept the public share experience neutral so it does not disclose private JDHub
+  branding or server details.
+
+#### Tasks, Projects, and Live Updates
+
+- Redesigned Tasks and Projects into clearer operational workspaces.
+- Kept tasks independent while allowing an optional project relationship.
+- Added task workflow views and drag-and-drop movement between statuses,
+  including visible completed work.
+- Added app-wide refresh notifications so assistant-created or edited records
+  update relevant modules without a full browser refresh.
+- Added polite assistant check-ins for due and overdue tasks, with validated
+  previews before status changes are saved.
+
+#### Finance and Module Organization
+
+- Added forecast and financing views alongside actual finance transactions.
+- Added forecast resolution states without assuming an overdue payment was paid.
+- Folded receipt handling into Finance instead of keeping a duplicate sidebar
+  module.
+- Kept Integrations for future external-system connections and renamed Server
+  Manager to the more general admin-only Infrastructure area.
+- Moved Files under Tools and kept Automations visibly planned rather than
+  presenting it as complete.
+
+#### Assistant and Interface
+
+- Added conversation history and consistent structured action validation.
+- Added module-aware context and live cross-module record refresh behavior.
+- Made the assistant open at the newest message and improved its floating and
+  docked layouts.
+- Added individual privacy controls for money-related Dashboard summaries.
+- Improved responsive layouts, branding, navigation, empty states, and module
+  presentation across the application.
+
+### What Changed From Discussion
+
+The current product direction is:
+
+```text
+JDHub should feel like one connected private workspace. Modules may remain
+independent, but shared records, assistant actions, permissions, and live updates
+must behave consistently across the application.
+```
+
+Files should behave like a familiar desktop/cloud file manager. Account creation
+belongs to administrators. Public sharing must reveal only the shared content,
+not internal infrastructure or private application details.
+
+### Verification
+
+- Backend automated tests passed: 19 of 19.
+- Frontend ESLint passed.
+- Frontend production build passed.
+- Version consistency and Git whitespace checks passed.
+- Gmail accepted a local SMTP test message during configuration validation.
+- Current documentation/versioning work remains local and uncommitted.
+
+### Remaining Before the Next Push
+
+- Perform a final browser walkthrough of the highest-risk workflows:
+  authentication, account administration, file upload/move/share/download,
+  assistant-created records, task movement, and finance forecast resolution.
+- Review environment examples without exposing local or server secrets.
+- Review the complete staged file list and exclude unrelated Valheim directories.
+- Decide whether `0.2.0-beta.1` is ready to tag after the release commit.
+- Deploy only when explicitly requested after the local release is approved.
+
+### Possible Next Steps
+
+- Add password change and account recovery flows.
+- Make Module Status and appropriate settings admin-only.
+- Add frontend interaction tests for the new workflows.
+- Add export, import, archive, restore, and documented disaster-recovery tools.
+
+---
+
+## 2026-09-27 - Windows Notepad Backup Bridge
+
+### What We Worked On
+
+We made Windows 11 Notepad the primary writing app while keeping JDHub Notes as a private backup and optional web editor.
+
+### What We Finished
+
+- Added a one-way Windows Notepad-to-JDHub bridge that never writes into Notepad session files.
+- Added read-only desktop backup tabs inside Notes.
+- Added **Make editable web copy** so a desktop backup can intentionally become a separate normal JDHub note.
+- Preserved the existing tabbed web editor, autosave, clear, and archive behavior for web-created notes.
+- Added raw Notepad session snapshots so recovery does not depend only on the current decoder.
+- Added state hashing so unchanged sessions are not duplicated.
+- Added a dedicated bridge credential that cannot access normal JDHub routes.
+- Added a Windows sign-in task that keeps the bridge running in the background.
+
+### Verification
+
+- Decoded all six current Notepad tab records without printing note content.
+- Imported four non-empty desktop notes and retained two empty tabs in the raw snapshot.
+- Stored all 18 related Notepad session files in one recovery snapshot.
+- Confirmed a repeated sync returned unchanged and did not duplicate data.
+- Frontend lint and production build passed.
+- Backend smoke tests and syntax checks passed.
+- Docker backend, frontend, and MongoDB health checks passed.
+
+### Possible Next Steps
+
+- Add an in-app recovery browser for older raw snapshots.
+- Add a manual backup-now button that talks to the local bridge.
+- Add retention controls after deciding how many historical snapshots to keep.
+
+---
+
+## 2026-09-27 - Finance Forecast and Financing Overview
+
+### What We Worked On
+
+We separated planned cash flow from completed finance transactions and converted the supplied September–December 2026 GCash schedule into a private forecast.
+
+### What We Finished
+
+- Added a user-scoped Finance Forecast model and protected API.
+- Added a running-balance schedule starting from the supplied GCash snapshot.
+- Preserved combined Nov/Dec date-range payments while keeping detailed October payments visible.
+- Added planned, completed, and skipped status controls; skipped items are removed from projected totals.
+- Added a Financing overview for GGives, GLoan, SLoan, and SPayLater.
+- Excluded the removed installment from both the forecast data and interface.
+- Kept forecast entries separate from actual monthly income, expense, and net totals.
+- Added an idempotent owner-specific seed script so the plan can be updated without duplication.
+
+### Verification
+
+- Frontend lint passed.
+- Frontend production build passed.
+- Backend smoke tests passed.
+- Backend syntax checks passed.
+- Stored forecast verified with 28 scheduled entries, 7 financing records, ₱112,000 planned income, ₱101,413.16 planned payments, and a ₱24,715.17 ending balance.
+
+### Possible Next Steps
+
+- Add manual forecast-entry creation and editing.
+- Convert completed forecast entries into actual transactions with confirmation.
+- Add recurring schedule generation beyond December 2026.
+
+---
+
+## 2026-09-24 - Unified JDHub Assistant and Command Center
+
+### What We Worked On
+
+We replaced the separate topbar command shortcut, New Command form, and Ask AI form with one persistent JDHub Assistant.
+
+### What We Finished
+
+- Changed the topbar command placeholder into a working assistant prompt.
+- Added a minimized bottom-right assistant launcher across modules.
+- Added a Messenger-style floating chat as the first open state.
+- Added an integrated split view with the current module on the left and the assistant on the right.
+- Added a visible divider for resizing the integrated assistant between 320 and 720 pixels.
+- Kept the integrated assistant visually separate from the page while making its full header and composer remain visible.
+- Added independent assistant scrolling plus a History drawer in both floating and integrated views.
+- Made minimize return the integrated assistant to floating chat and close return it to the Ask JDHub launcher.
+- Kept the assistant mounted while navigating so its conversation and pending preview remain available.
+- Rebuilt Command Center around the same assistant instead of rendering a duplicate chat.
+- Removed the separate New Command form.
+- Routed supported command prefixes through the existing preview-and-confirm flow.
+- Routed normal questions through Ask AI.
+- Reduced the Command Center side panel to global search and recent command history.
+- Added responsive behavior that gives the assistant the full content area on smaller screens.
+
+### What Changed From Discussion
+
+The app now follows this rule:
+
+```text
+JDHub has one assistant conversation. Outside Command Center it moves from launcher, to floating chat, to a resizable right-side dock. The full chat-and-history layout exists only in Command Center.
+```
+
+### Verification
+
+- Frontend lint passed.
+- Frontend production build passed.
+- Backend smoke tests passed.
+- Docker rebuild passed.
+- Backend health and database connection passed.
+
+### Possible Next Steps
+
+- Persist AI conversation history in the backend.
+- Add links from search results to their source modules.
+- Add assistant preferences and scoped context controls.
+
+---
+
+## 2026-08-26 - Mobile Sidebar Drawer
+
+### What We Worked On
+
+We fixed the mobile navigation behavior.
+
+The owner pointed out that the sidebar should not sit at the top of the mobile page. It should be hidden by default and opened from a floating control.
+
+### What We Finished
+
+- Added a separate mobile sidebar open state.
+- Added a floating mobile navigation button.
+- Changed the mobile sidebar into a fixed drawer that slides in from the left.
+- Added a backdrop that closes the drawer.
+- Made the existing sidebar arrow close the drawer on mobile.
+- Kept the desktop sidebar collapse behavior unchanged.
+- Closed the mobile drawer automatically after selecting a navigation item.
+
+### What Changed From Discussion
+
+Mobile navigation is now treated as a drawer, not a stacked page section.
+
+### Verification
+
+- Frontend production build passed.
+- Docker Compose frontend rebuild/restart passed.
+- Browser mobile viewport check passed:
+  - Drawer hidden off-screen by default.
+  - Floating button visible at mid-left.
+  - Drawer opens to the left edge.
+  - Sidebar arrow closes the drawer.
+  - Reminders is not present in the sidebar.
+
+### Possible Next Steps
+
+- Add swipe-to-close later if needed.
+- Add read/dismiss state for attention notifications.
+- Commit the current MVP 2 checkpoint.
+
+---
+
+## 2026-08-26 - Reminders Folded Into App Attention
+
+### What We Worked On
+
+We changed the reminder direction based on product feedback.
+
+The owner pointed out that reminders should not be a separate module users must visit. Instead, JDHub should notice important things across the app, such as tasks due today and schedule items happening today, then report them through the app-wide notification/attention layer.
+
+### What We Finished
+
+- Removed Reminders from the sidebar navigation.
+- Removed the standalone frontend Reminders page and frontend reminders API wrapper.
+- Added shared frontend attention-signal logic.
+- Added due-task data to the Dashboard API.
+- Changed the Dashboard reminders panel into `Today's Attention`.
+- Made the topbar notification bell include:
+  - Tasks due today
+  - Overdue tasks
+  - Schedule items happening today
+  - Existing explicit reminder records that are due
+  - Setup prompts
+  - System health status
+- Changed Module Status from `Reminders` to `Attention`.
+- Updated the README, roadmap, and MCP plan to reflect the new model.
+
+### What Changed From Discussion
+
+The new rule is:
+
+```text
+Reminders are not a user-facing module. They are an app-wide attention behavior fed by tasks, scheduling, and internal reminder records.
+```
+
+The backend reminder route still exists for internal/future compatibility, but the user-facing app no longer treats it as a separate module.
+
+### Verification
+
+- Backend syntax checks passed.
+- Frontend production build passed.
+
+### Possible Next Steps
+
+- Add read/dismiss state for attention items.
+- Add notification preferences.
+- Add task-level reminder offsets, such as due date, one day before, or custom.
+- Add MCP read tools for attention signals.
+
+---
+
+## 2026-08-25 - Production Hardening and MCP Capability Map
+
+### What We Worked On
+
+We shifted the next MVP 2 priority toward production readiness because JDHub stores real personal data and will later be exposed to AI clients through an MCP-style integration.
+
+The goal was to harden the current HTTP API and define the functions a future MCP server should wrap.
+
+### What We Finished
+
+- Added Helmet security headers.
+- Added auth route rate limiting.
+- Added environment-based CORS configuration.
+- Added Docker Compose healthchecks for backend, frontend, and MongoDB.
+- Added a production Compose override.
+- Expanded environment examples with JWT, CORS, trust proxy, and auth rate-limit settings.
+- Added authenticated MCP capability discovery at `/api/mcp/capabilities`.
+- Documented the planned MCP tool/function surface for current modules.
+- Updated the README, roadmap, and developer journal.
+
+### What Changed From Discussion
+
+The owner wants JDHub to eventually work with AI through an API or MCP implementation.
+
+The decision for now is:
+
+```text
+MCP should wrap JDHub's authenticated API, not connect directly to MongoDB.
+```
+
+That keeps permissions, validation, UTC date handling, and future audit behavior in one place.
+
+### Verification
+
+- Backend syntax checks passed.
+- Frontend production build passed.
+- Local Docker Compose config validation passed.
+- Production Docker Compose override validation passed when required production environment values were supplied.
+- Backend production dependency audit passed with zero reported vulnerabilities after `npm audit fix`.
+
+### Possible Next Steps
+
+- Add user/admin roles and scoped API tokens for MCP clients.
+- Add read-only MCP server package.
+- Add data export and backup endpoints.
+- Add API smoke tests for the hardened routes.
+
+---
+
+## 2026-08-23 - MVP 2 Form Validation Pass
+
+### What We Worked On
+
+We started the next MVP 2 usability item: validation, loading, and confirmation polish.
+
+The goal was to stop users from hitting backend errors for simple missing fields and to make form mistakes clear before a save request is sent.
+
+### What We Finished
+
+- Added a shared frontend form validation helper.
+- Added client-side required-field checks for:
+  - Tasks
+  - Projects
+  - Finance
+  - Reminders
+  - Scheduling
+  - Knowledge Base
+  - Integrations
+  - Server Manager
+- Added friendly field-level error text.
+- Added invalid-field styling.
+- Added date ordering checks for project target dates and schedule end times.
+- Added finance amount and currency-code validation.
+- Added server port range validation.
+
+### What Changed From Discussion
+
+This work follows the MVP 2 build order after onboarding, empty states, planned module handling, command chips, notifications, persistence, and UTC/local time handling.
+
+Validation is now treated as a user-facing feature, not only a backend safety check.
+
+### Verification
+
+- Frontend production build passed.
+
+### Possible Next Steps
+
+- Run and confirm the frontend build.
+- Add profile/account basics.
+- Start export/import/archive data management.
+- Add API smoke tests for the core create/update flows.
+
+---
+
 ## Current Direction
 
 ```text
@@ -34,15 +482,11 @@ The current goal is to make the existing JDHub modules easier to understand, saf
 
 Likely next build order:
 
-1. Dashboard onboarding checklist
-2. Empty-state actions
-3. Planned module handling
-4. Command Center command chips
-5. Form validation and friendlier errors
-6. User/admin basics
-7. Data export/import/archive tools
-8. Production hardening
-9. Quality/testing pass
+1. Finish production hardening
+2. MCP/API capability foundation
+3. User/admin basics
+4. Data export/import/archive tools
+5. Quality/testing pass
 
 ---
 

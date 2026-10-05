@@ -5,7 +5,7 @@ const CommandActionSchema = new mongoose.Schema({
   command_message_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CommandMessage', required: true, index: true },
   action_type: {
     type: String,
-    enum: ['create_life_log', 'create_task', 'create_transaction'],
+    enum: ['create_life_log', 'create_task', 'update_task', 'create_transaction'],
     required: true,
     index: true,
   },

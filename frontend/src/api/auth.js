@@ -13,7 +13,18 @@ export async function login({ email, password }) {
   const response = await fetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ email, password }),
+  });
+  return parseJson(response);
+}
+
+export async function verifyEmailLogin({ challengeId, code, trustBrowser }) {
+  const response = await fetch(`${API_BASE}/api/auth/verify-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ challengeId, code, trustBrowser }),
   });
   return parseJson(response);
 }

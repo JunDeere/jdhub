@@ -2,27 +2,76 @@ services:
   backend:
     build: ./backend
     ports:
-      - "3000:3000"
+      - "${BACKEND_BIND:-0.0.0.0}:${APP_PORT:-3001}:3000"
     environment:
       - PORT=3000
       - MONGO_URI=mongodb://mongo:27017/jdhub
       - JWT_SECRET=change-this-secret
+      - JWT_EXPIRES_IN=7d
+      - TRUST_PROXY=0
+      - AUTH_RATE_LIMIT_WINDOW_MS=900000
+      - AUTH_RATE_LIMIT_MAX=20
+      - EMAIL_AUTH_REQUIRED=${EMAIL_AUTH_REQUIRED:-false}
+      - TRUSTED_BROWSER_DAYS=${TRUSTED_BROWSER_DAYS:-30}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
+      - SITE_ADMIN_EMAIL=${SITE_ADMIN_EMAIL:-jundell.ggare@gmail.com}
+      - DEMO_AI_RATE_LIMIT_WINDOW_MS=${DEMO_AI_RATE_LIMIT_WINDOW_MS:-3600000}
+      - DEMO_AI_RATE_LIMIT_MAX=${DEMO_AI_RATE_LIMIT_MAX:-20}
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-openrouter/free}
+      - OPENROUTER_FALLBACK_MODEL=${OPENROUTER_FALLBACK_MODEL:-}
+      - OPENROUTER_REQUIRE_ZDR=${OPENROUTER_REQUIRE_ZDR:-false}
+      - OPENROUTER_SITE_URL=${OPENROUTER_SITE_URL:-http://localhost:5173}
+      - OPENROUTER_SITE_NAME=${OPENROUTER_SITE_NAME:-JDHub}
+      - FILE_STORAGE_ROOT=/data/jdhub-files
+      - FILE_TOTAL_QUOTA_GB=${FILE_TOTAL_QUOTA_GB:-300}
+      - FILE_USER_QUOTA_GB=${FILE_USER_QUOTA_GB:-10}
+      - PUBLIC_SHARE_ORIGIN=${PUBLIC_SHARE_ORIGIN:-http://localhost:5173}
+    volumes:
+      - ${FILE_STORAGE_PATH:-./jdhub-cloud}:/data/jdhub-files
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   frontend:
     build: ./frontend
     ports:
-      - "5173:80"
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-5173}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   mongo:
     image: mongo:6
     ports:
-      - "27017:27017"
+      - "${MONGO_BIND:-0.0.0.0}:${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 volumes:
   mongo-data:

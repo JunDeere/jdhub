@@ -10,58 +10,61 @@ import {
   ClipboardList,
   FileText,
   FolderKanban,
-  Gauge,
+  House,
   Plug,
-  Receipt,
   SearchCheck,
+  ShieldCheck,
+  Send,
   Server,
   Settings,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import CommandCenter from './pages/CommandCenter.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Finance from './pages/Finance.jsx';
+import Files from './pages/Files.jsx';
 import Integrations from './pages/Integrations.jsx';
 import KnowledgeBase from './pages/KnowledgeBase.jsx';
 import LifeLog from './pages/LifeLog.jsx';
 import ModuleStatus from './pages/ModuleStatus.jsx';
 import Projects from './pages/Projects.jsx';
-import Reminders from './pages/Reminders.jsx';
+import PublicShare from './pages/PublicShare.jsx';
 import Scheduling from './pages/Scheduling.jsx';
 import ServerManager from './pages/ServerManager.jsx';
+import Security from './pages/Security.jsx';
 import Tasks from './pages/Tasks.jsx';
 import { getCurrentUser, getDashboard, getHealth, updateCurrentUser } from './api/auth.js';
-import { formatLocalDateTime } from './utils/dateTime.js';
+import { buildAttentionItems } from './utils/attention.js';
 
 const STORAGE_KEY = 'jdhubToken';
 const THEME_KEY = 'jdhubTheme';
 const SIDEBAR_KEY = 'jdhubSidebarCollapsed';
+const ASSISTANT_WIDTH_KEY = 'jdhubAssistantWidth';
 
 const navIcons = {
-  dashboard: Gauge,
+  dashboard: House,
   'command-center': SearchCheck,
   'life-log': FileText,
   tasks: ClipboardList,
-  reminders: Bell,
   scheduling: CalendarDays,
   finance: CircleDollarSign,
   projects: FolderKanban,
   'knowledge-base': BookOpen,
   files: FileText,
-  receipts: Receipt,
   automations: Bot,
   'server-manager': Server,
   integrations: Plug,
   'module-status': Activity,
   settings: Settings,
+  security: ShieldCheck,
 };
 
 const navGroups = [
   {
     label: 'Core',
     items: [
-      { id: 'dashboard', label: 'Dashboard' },
+      { id: 'dashboard', label: 'Home' },
       { id: 'command-center', label: 'Command Center' },
     ],
   },
@@ -70,7 +73,6 @@ const navGroups = [
     items: [
       { id: 'life-log', label: 'Notes' },
       { id: 'tasks', label: 'Tasks' },
-      { id: 'reminders', label: 'Reminders' },
       { id: 'scheduling', label: 'Scheduling' },
       { id: 'finance', label: 'Finance' },
     ],
@@ -80,21 +82,21 @@ const navGroups = [
     items: [
       { id: 'projects', label: 'Projects' },
       { id: 'knowledge-base', label: 'Knowledge Base' },
-      { id: 'files', label: 'Files', disabled: true },
     ],
   },
   {
     label: 'Tools',
     items: [
-      { id: 'receipts', label: 'Receipts', disabled: true },
+      { id: 'files', label: 'Files' },
       { id: 'automations', label: 'Automations', disabled: true },
-      { id: 'server-manager', label: 'Server Manager' },
-      { id: 'integrations', label: 'Integrations' },
     ],
   },
   {
     label: 'System',
     items: [
+      { id: 'security', label: 'Administration', adminOnly: true },
+      { id: 'server-manager', label: 'Infrastructure', adminOnly: true },
+      { id: 'integrations', label: 'Integrations', adminOnly: true },
       { id: 'module-status', label: 'Module Status' },
       { id: 'settings', label: 'Settings' },
     ],
@@ -119,12 +121,6 @@ const pageDetails = {
     eyebrow: 'Personal work tracking',
     description: 'Tasks will track personal, project, server, finance, and work items with status, priority, due dates, categories, and tags.',
     next: ['Create Task model', 'Add task routes', 'Show open tasks on Dashboard'],
-  },
-  reminders: {
-    title: 'Reminders',
-    eyebrow: 'Internal reminders first',
-    description: 'Reminders will store things to revisit later. Email, push, Discord, or Telegram reminders are future integrations.',
-    next: ['Create Reminder model', 'Add remind_at field', 'Link to tasks or projects later'],
   },
   scheduling: {
     title: 'Scheduling',
@@ -157,13 +153,6 @@ const pageDetails = {
     description: 'Files should begin as local/private metadata linked to modules. Google Drive integration comes later.',
     next: ['Plan upload safety', 'Store metadata', 'Protect downloads'],
   },
-  receipts: {
-    title: 'Receipts',
-    eyebrow: 'Manual receipt records',
-    state: 'Planned',
-    description: 'Receipts start as manual merchant, amount, date, category, and notes records, then link to finance transactions.',
-    next: ['Create Receipt model later', 'Link to transactions', 'Leave OCR for future work'],
-  },
   automations: {
     title: 'Automations',
     eyebrow: 'Manual records only',
@@ -172,9 +161,9 @@ const pageDetails = {
     next: ['Store platform and status', 'Store purpose and notes', 'Require confirmation for future triggers'],
   },
   'server-manager': {
-    title: 'Server Manager',
-    eyebrow: 'Manual infrastructure notes',
-    description: 'Server Manager starts as notes and records for servers, containers, ports, domains, and incidents. No shell commands from the app.',
+    title: 'Infrastructure',
+    eyebrow: 'Infrastructure records',
+    description: 'Infrastructure stores administrative records for servers, containers, ports, domains, and incidents. No shell commands run from the app.',
     next: ['Add server records later', 'Track incidents manually', 'Keep live controls out of MVP'],
   },
   integrations: {
@@ -203,7 +192,7 @@ function getNextThemeMode(theme) {
 function buildNotifications(dashboard, health) {
   if (!dashboard) return [];
 
-  const items = [];
+  const items = [...buildAttentionItems(dashboard)];
 
   if (!dashboard.recentEntries?.length) {
     items.push({
@@ -245,25 +234,15 @@ function buildNotifications(dashboard, health) {
     });
   }
 
-  dashboard.upcomingReminders?.slice(0, 3).forEach((reminder) => {
+  if (health?.status !== 'ok' || health?.services?.database !== 'connected') {
     items.push({
-      id: `reminder-${reminder._id}`,
-      title: reminder.title,
-      detail: `Reminder due ${formatLocalDateTime(reminder.remind_at)}.`,
-      action: 'Open Reminders',
-      page: 'reminders',
+      id: 'system-warning',
+      title: 'System status needs attention',
+      detail: 'API or database health is not fully available.',
+      action: 'View status',
+      page: 'module-status',
     });
-  });
-
-  items.push({
-    id: health?.status === 'ok' && health?.services?.database === 'connected' ? 'system-ok' : 'system-warning',
-    title: health?.status === 'ok' && health?.services?.database === 'connected' ? 'System healthy' : 'System status needs attention',
-    detail: health?.status === 'ok' && health?.services?.database === 'connected'
-      ? 'API is responding and MongoDB is connected.'
-      : 'API or database health is not fully available.',
-    action: 'View status',
-    page: 'module-status',
-  });
+  }
 
   return items;
 }
@@ -308,11 +287,6 @@ function ProfileSettings({ token, user, onUserChange }) {
   const [phone, setPhone] = useState(user?.phone || '');
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setName(user?.name || '');
-    setPhone(user?.phone || '');
-  }, [user]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -393,7 +367,12 @@ function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUser
       </p>
 
       <div className="panel">
-        <ProfileSettings token={token} user={user} onUserChange={onUserChange} />
+        <ProfileSettings
+          key={user?._id || user?.email || 'profile'}
+          token={token}
+          user={user}
+          onUserChange={onUserChange}
+        />
       </div>
 
       <div className="panel">
@@ -434,20 +413,30 @@ function ModulePage({ pageId }) {
   );
 }
 
-export default function App() {
+function PrivateApp() {
   const [token, setToken] = useState(localStorage.getItem(STORAGE_KEY));
   const [user, setUser] = useState(null);
   const [health, setHealth] = useState(null);
   const [checkingSession, setCheckingSession] = useState(Boolean(token));
   const [activePage, setActivePage] = useState('dashboard');
+  const [pageHistory, setPageHistory] = useState([]);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+  const [moduleRefreshKey, setModuleRefreshKey] = useState(0);
   const [notificationDashboard, setNotificationDashboard] = useState(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [assistantMode, setAssistantMode] = useState('closed');
+  const [assistantWidth, setAssistantWidth] = useState(() => {
+    const savedWidth = Number(localStorage.getItem(ASSISTANT_WIDTH_KEY));
+    return Number.isFinite(savedWidth) && savedWidth >= 320 ? savedWidth : 410;
+  });
+  const [topbarPrompt, setTopbarPrompt] = useState('');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem(SIDEBAR_KEY) === 'true');
   const [theme, setTheme] = useState(localStorage.getItem(THEME_KEY) || 'system');
   const [resolvedTheme, setResolvedTheme] = useState(
     (localStorage.getItem(THEME_KEY) || 'system') === 'system' ? getSystemTheme() : localStorage.getItem(THEME_KEY),
   );
+  const assistantRef = useRef(null);
 
   useEffect(() => {
     getHealth()
@@ -456,22 +445,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!token) {
-      setUser(null);
-      setNotificationDashboard(null);
-      setCheckingSession(false);
-      return;
-    }
+    if (!token) return undefined;
 
-    setCheckingSession(true);
+    let cancelled = false;
     getCurrentUser(token)
-      .then((data) => setUser(data.user))
+      .then((data) => {
+        if (!cancelled) setUser(data.user);
+      })
       .catch(() => {
+        if (cancelled) return;
         localStorage.removeItem(STORAGE_KEY);
         setToken(null);
         setUser(null);
+        setNotificationDashboard(null);
       })
-      .finally(() => setCheckingSession(false));
+      .finally(() => {
+        if (!cancelled) setCheckingSession(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   useEffect(() => {
@@ -506,6 +500,7 @@ export default function App() {
 
   const handleLogin = (newToken, loggedInUser) => {
     localStorage.setItem(STORAGE_KEY, newToken);
+    setCheckingSession(true);
     setUser(loggedInUser);
     setToken(newToken);
   };
@@ -514,15 +509,102 @@ export default function App() {
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
     setToken(null);
+    setNotificationDashboard(null);
+    setAssistantMode('closed');
+    setTopbarPrompt('');
+    setCheckingSession(false);
     setActivePage('dashboard');
+    setPageHistory([]);
   };
 
+  const handleDataChanged = useCallback(() => {
+    setDashboardRefreshKey((key) => key + 1);
+  }, []);
+
+  const handleAssistantDataChanged = useCallback(() => {
+    setDashboardRefreshKey((key) => key + 1);
+    setModuleRefreshKey((key) => key + 1);
+  }, []);
+
+  const navigateToPage = (pageId) => {
+    const target = findNavItem(pageId);
+    if (target?.adminOnly && user?.role !== 'admin') return;
+    setPageHistory((current) => (pageId === activePage ? current : [...current, activePage].slice(-20)));
+    setActivePage(pageId);
+    setMobileSidebarOpen(false);
+  };
+
+  const navigateBack = () => {
+    setPageHistory((current) => {
+      const previousPage = current[current.length - 1] || 'dashboard';
+      setActivePage(previousPage);
+      setMobileSidebarOpen(false);
+      setNotificationsOpen(false);
+      return current.slice(0, -1);
+    });
+  };
+
+  const handleSidebarToggle = () => {
+    if (window.matchMedia('(max-width: 980px)').matches) {
+      setMobileSidebarOpen(false);
+      return;
+    }
+
+    setSidebarCollapsed((current) => !current);
+  };
+
+  const handleTopbarAssistantSubmit = (event) => {
+    event.preventDefault();
+    const prompt = topbarPrompt.trim();
+    if (!prompt) {
+      setAssistantMode('floating');
+      assistantRef.current?.focus();
+      return;
+    }
+
+    setAssistantMode('floating');
+    setTopbarPrompt('');
+    assistantRef.current?.submit(prompt);
+  };
+
+  const handleAssistantResizeStart = (event) => {
+    event.preventDefault();
+    const workspaceRight = event.currentTarget.parentElement.getBoundingClientRect().right;
+
+    const handlePointerMove = (pointerEvent) => {
+      const nextWidth = Math.min(720, Math.max(320, workspaceRight - pointerEvent.clientX));
+      setAssistantWidth(nextWidth);
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const resizeAssistantWithKeyboard = (event) => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    const direction = event.key === 'ArrowLeft' ? 24 : -24;
+    setAssistantWidth((current) => Math.min(720, Math.max(320, current + direction)));
+  };
+
+  useEffect(() => {
+    localStorage.setItem(ASSISTANT_WIDTH_KEY, String(Math.round(assistantWidth)));
+  }, [assistantWidth]);
+
   const activeItem = findNavItem(activePage);
+  const canGoBack = pageHistory.length > 0 && activePage !== 'dashboard';
   const notifications = buildNotifications(notificationDashboard, health);
   const currentPage = activePage === 'dashboard'
-    ? <Dashboard token={token} refreshKey={dashboardRefreshKey} onNavigate={setActivePage} />
+    ? <Dashboard token={token} user={user} refreshKey={dashboardRefreshKey} onNavigate={navigateToPage} />
     : activePage === 'command-center'
-      ? <CommandCenter token={token} onCommandSaved={() => setDashboardRefreshKey((key) => key + 1)} />
+      ? null
+    : activePage === 'security'
+      ? <Security token={token} />
     : activePage === 'settings'
       ? (
         <SettingsPage
@@ -537,23 +619,23 @@ export default function App() {
     : activePage === 'module-status'
       ? <ModuleStatus token={token} health={health} refreshKey={dashboardRefreshKey} />
       : activePage === 'life-log'
-        ? <LifeLog token={token} onEntriesChanged={() => setDashboardRefreshKey((key) => key + 1)} />
+        ? <LifeLog token={token} refreshKey={moduleRefreshKey} onEntriesChanged={handleDataChanged} />
       : activePage === 'tasks'
-        ? <Tasks token={token} onTasksChanged={() => setDashboardRefreshKey((key) => key + 1)} />
+        ? <Tasks token={token} refreshKey={moduleRefreshKey} onTasksChanged={handleDataChanged} />
       : activePage === 'finance'
-        ? <Finance token={token} onTransactionsChanged={() => setDashboardRefreshKey((key) => key + 1)} />
-      : activePage === 'reminders'
-        ? <Reminders token={token} onRemindersChanged={() => setDashboardRefreshKey((key) => key + 1)} />
+        ? <Finance token={token} refreshKey={moduleRefreshKey} onTransactionsChanged={handleDataChanged} />
       : activePage === 'scheduling'
-        ? <Scheduling token={token} onScheduleChanged={() => setDashboardRefreshKey((key) => key + 1)} />
+        ? <Scheduling token={token} refreshKey={moduleRefreshKey} onScheduleChanged={handleDataChanged} />
       : activePage === 'projects'
-        ? <Projects token={token} onProjectsChanged={() => setDashboardRefreshKey((key) => key + 1)} />
+        ? <Projects token={token} refreshKey={moduleRefreshKey} onProjectsChanged={handleDataChanged} />
       : activePage === 'knowledge-base'
-        ? <KnowledgeBase token={token} onKnowledgeChanged={() => setDashboardRefreshKey((key) => key + 1)} />
+        ? <KnowledgeBase token={token} refreshKey={moduleRefreshKey} onKnowledgeChanged={handleDataChanged} />
+      : activePage === 'files'
+        ? <Files token={token} />
       : activePage === 'server-manager'
-        ? <ServerManager token={token} onServerRecordsChanged={() => setDashboardRefreshKey((key) => key + 1)} />
+        ? <ServerManager token={token} refreshKey={moduleRefreshKey} onServerRecordsChanged={handleDataChanged} />
       : activePage === 'integrations'
-        ? <Integrations token={token} onIntegrationsChanged={() => setDashboardRefreshKey((key) => key + 1)} />
+        ? <Integrations token={token} refreshKey={moduleRefreshKey} onIntegrationsChanged={handleDataChanged} />
       : <ModulePage pageId={activePage} />;
 
   return (
@@ -566,7 +648,25 @@ export default function App() {
           </div>
         </div>
       ) : token ? (
-        <div className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}>
+        <div className={[
+          'app-shell',
+          sidebarCollapsed ? 'sidebar-collapsed' : '',
+          mobileSidebarOpen ? 'mobile-sidebar-open' : '',
+        ].filter(Boolean).join(' ')}>
+          <button
+            aria-label="Open navigation"
+            className="mobile-nav-fab"
+            onClick={() => setMobileSidebarOpen(true)}
+            type="button"
+          >
+            <ChevronRight size={20} />
+          </button>
+          <button
+            aria-label="Close navigation"
+            className="mobile-sidebar-backdrop"
+            onClick={() => setMobileSidebarOpen(false)}
+            type="button"
+          />
           <aside className="sidebar">
             <div className="brand-block">
               <div className="brand-mark">JD</div>
@@ -577,7 +677,7 @@ export default function App() {
               <button
                 aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 className="sidebar-toggle"
-                onClick={() => setSidebarCollapsed((current) => !current)}
+                onClick={handleSidebarToggle}
                 title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 type="button"
               >
@@ -589,7 +689,7 @@ export default function App() {
               {navGroups.map((group) => (
                 <div className="nav-group" key={group.label}>
                   <p className="nav-label">{group.label}</p>
-                  {group.items.map((item) => {
+                  {group.items.filter((item) => !item.adminOnly || user?.role === 'admin').map((item) => {
                     const Icon = navIcons[item.id] || FileText;
 
                     return (
@@ -603,7 +703,7 @@ export default function App() {
                         disabled={item.disabled}
                         key={item.id}
                         onClick={() => {
-                          if (!item.disabled) setActivePage(item.id);
+                          if (!item.disabled) navigateToPage(item.id);
                         }}
                         title={sidebarCollapsed ? item.label : undefined}
                         type="button"
@@ -618,20 +718,43 @@ export default function App() {
             </nav>
           </aside>
 
-          <div className="workspace">
+          <div className={[
+            'workspace',
+            activePage !== 'command-center' && assistantMode === 'integrated' ? 'assistant-docked-workspace' : '',
+          ].filter(Boolean).join(' ')}>
             <header className="topbar">
-              <div>
-                <p className="eyebrow">Current view</p>
-                <h2>{activeItem?.label || 'Dashboard'}</h2>
+              <div className="topbar-title">
+                <button
+                  aria-label="Go back"
+                  className="back-button"
+                  disabled={!canGoBack}
+                  onClick={navigateBack}
+                  title={canGoBack ? 'Go back' : 'No previous page'}
+                  type="button"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <div>
+                  {activePage !== 'dashboard' && (
+                    <button className="mobile-home-link" onClick={() => navigateToPage('dashboard')} type="button">
+                      Home
+                    </button>
+                  )}
+                  <p className="eyebrow">Current view</p>
+                  <h2>{activeItem?.label || 'Home'}</h2>
+                </div>
               </div>
 
-              <div className="command-preview">
+              <form className="command-preview assistant-topbar-entry" onSubmit={handleTopbarAssistantSubmit}>
+                <Bot aria-hidden="true" size={17} />
                 <input
-                  aria-label="Command Center example"
-                  disabled
-                  placeholder="Command Center: add note: today I fixed nginx"
+                  aria-label="Ask JDHub or enter a command"
+                  onChange={(event) => setTopbarPrompt(event.target.value)}
+                  placeholder="Ask JDHub or enter a command…"
+                  value={topbarPrompt}
                 />
-              </div>
+                <button aria-label="Send to JDHub Assistant" type="submit"><Send size={16} /></button>
+              </form>
 
               <div className="user-area">
                 <div className="notification-popover">
@@ -664,7 +787,7 @@ export default function App() {
                               <button
                                 className="secondary-button"
                                 onClick={() => {
-                                  setActivePage(item.page);
+                                  navigateToPage(item.page);
                                   setNotificationsOpen(false);
                                 }}
                                 type="button"
@@ -686,14 +809,56 @@ export default function App() {
                 >
                   {theme === 'system' ? `System: ${resolvedTheme}` : theme}
                 </button>
-                {user?.email && <span>{user.email}</span>}
+                {user?.email && (
+                  <span className="account-identity">
+                    <span>{user.email}</span>
+                    {user.role === 'admin' && <span className="account-role is-admin">Administrator</span>}
+                  </span>
+                )}
                 <button className="secondary-button" onClick={handleLogout} type="button">
                   Logout
                 </button>
               </div>
             </header>
 
-            <main className="content-area">{currentPage}</main>
+            <main className={[
+              'content-area',
+              activePage !== 'command-center' && assistantMode === 'integrated' ? 'assistant-docked' : '',
+            ].filter(Boolean).join(' ')}>
+              <div className={[
+                'assistant-workspace',
+                activePage === 'command-center' ? 'command-center-mode' : '',
+                activePage !== 'command-center' && assistantMode === 'integrated' ? 'has-assistant' : '',
+                activePage !== 'command-center' && assistantMode === 'floating' ? 'has-floating-assistant' : '',
+              ].filter(Boolean).join(' ')} style={{ '--assistant-width': `${assistantWidth}px` }}>
+                <CommandCenter
+                  ref={assistantRef}
+                  mode={activePage === 'command-center' ? 'page' : assistantMode === 'integrated' ? 'integrated' : assistantMode === 'floating' ? 'floating' : 'minimized'}
+                  onClose={() => setAssistantMode('closed')}
+                  onCommandSaved={handleAssistantDataChanged}
+                  onExpand={() => setAssistantMode('floating')}
+                  onIntegrate={() => setAssistantMode('integrated')}
+                  onMinimize={() => setAssistantMode('floating')}
+                  token={token}
+                />
+                {activePage !== 'command-center' && <div className="module-surface">{currentPage}</div>}
+                {activePage !== 'command-center' && assistantMode === 'integrated' && (
+                  <div
+                    aria-label="Resize JDHub Assistant"
+                    aria-orientation="vertical"
+                    aria-valuemax="720"
+                    aria-valuemin="320"
+                    aria-valuenow={Math.round(assistantWidth)}
+                    className="assistant-resizer"
+                    onKeyDown={resizeAssistantWithKeyboard}
+                    onPointerDown={handleAssistantResizeStart}
+                    role="separator"
+                    tabIndex="0"
+                    title="Drag to resize the assistant"
+                  />
+                )}
+              </div>
+            </main>
 
             <footer className="system-footer">
               <span>API: {health?.services?.api || health?.status || 'checking'}</span>
@@ -714,4 +879,10 @@ export default function App() {
       )}
     </>
   );
+}
+
+export default function App() {
+  const shareMatch = window.location.pathname.match(/^\/s\/([A-Za-z0-9_-]{32,160})\/?$/);
+  if (shareMatch) return <PublicShare shareToken={shareMatch[1]} />;
+  return <PrivateApp />;
 }

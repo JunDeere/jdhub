@@ -5,6 +5,7 @@ import {
   getIntegrationRecords,
   updateIntegrationRecord,
 } from '../api/integrations.js';
+import { hasValidationErrors, requiredText } from '../utils/formValidation.js';
 
 const statuses = ['planned', 'researching', 'ready', 'active', 'paused', 'blocked'];
 
@@ -18,13 +19,14 @@ const emptyForm = {
   tags: '',
 };
 
-export default function Integrations({ token, onIntegrationsChanged }) {
+export default function Integrations({ token, refreshKey, onIntegrationsChanged }) {
   const [records, setRecords] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [statusMessage, setStatusMessage] = useState(null);
 
   const loadRecords = async () => {
@@ -34,7 +36,6 @@ export default function Integrations({ token, onIntegrationsChanged }) {
     try {
       const data = await getIntegrationRecords(token);
       setRecords(data.records);
-      onIntegrationsChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -43,23 +44,51 @@ export default function Integrations({ token, onIntegrationsChanged }) {
   };
 
   useEffect(() => {
-    loadRecords();
-  }, [token]);
+    let cancelled = false;
+
+    getIntegrationRecords(token)
+      .then((data) => {
+        if (!cancelled) setRecords(data.records);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, refreshKey]);
 
   const updateForm = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => ({ ...current, [field]: '' }));
   };
 
   const resetForm = () => {
     setForm(emptyForm);
     setEditingId(null);
+    setFieldErrors({});
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setSaving(true);
     setError(null);
     setStatusMessage(null);
+
+    const nextFieldErrors = {
+      provider: requiredText(form.provider, 'Provider'),
+      purpose: requiredText(form.purpose, 'Purpose'),
+    };
+
+    if (hasValidationErrors(nextFieldErrors)) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
+
+    setSaving(true);
 
     try {
       const payload = {
@@ -77,6 +106,7 @@ export default function Integrations({ token, onIntegrationsChanged }) {
 
       resetForm();
       await loadRecords();
+      onIntegrationsChanged?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -108,6 +138,7 @@ export default function Integrations({ token, onIntegrationsChanged }) {
       if (editingId === record._id) resetForm();
       setStatusMessage('Integration record archived.');
       await loadRecords();
+      onIntegrationsChanged?.();
     } catch (err) {
       setError(err.message);
     }
@@ -128,7 +159,7 @@ export default function Integrations({ token, onIntegrationsChanged }) {
       </p>
 
       <div className="utility-layout">
-        <form className="panel utility-form" onSubmit={handleSubmit}>
+        <form className="panel utility-form" noValidate onSubmit={handleSubmit}>
           <div className="control-row">
             <div>
               <h3>{editingId ? 'Edit Integration' : 'Add Integration'}</h3>
@@ -143,12 +174,14 @@ export default function Integrations({ token, onIntegrationsChanged }) {
 
           <label>
             Provider
-            <input value={form.provider} onChange={(event) => updateForm('provider', event.target.value)} placeholder="GitHub, Google Calendar, n8n" required />
+            <input className={fieldErrors.provider ? 'field-invalid' : ''} value={form.provider} onChange={(event) => updateForm('provider', event.target.value)} placeholder="GitHub, Google Calendar, n8n" />
+            {fieldErrors.provider && <span className="field-error">{fieldErrors.provider}</span>}
           </label>
 
           <label>
             Purpose
-            <input value={form.purpose} onChange={(event) => updateForm('purpose', event.target.value)} placeholder="Sync calendar events" required />
+            <input className={fieldErrors.purpose ? 'field-invalid' : ''} value={form.purpose} onChange={(event) => updateForm('purpose', event.target.value)} placeholder="Sync calendar events" />
+            {fieldErrors.purpose && <span className="field-error">{fieldErrors.purpose}</span>}
           </label>
 
           <div className="form-grid two">

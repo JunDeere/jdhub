@@ -38,3 +38,20 @@ export function dateInputToUtcIso(value) {
   if (!value) return null;
   return `${value}T00:00:00.000Z`;
 }
+
+export function isTodayLocal(value) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+}
+
+export function isPastLocal(value) {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() < Date.now();
+}
