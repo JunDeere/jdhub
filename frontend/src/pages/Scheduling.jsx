@@ -6,10 +6,10 @@ import {
   getSchedule,
   updateScheduleItem,
 } from '../api/schedule.js';
+import StatusToast from '../components/StatusToast.jsx';
 import {
   formatLocalDate,
   localDateTimeInputToUtcIso,
-  localTimeZone,
   toLocalDateTimeInput,
 } from '../utils/dateTime.js';
 import { dateOrder, hasValidationErrors, requiredText } from '../utils/formValidation.js';
@@ -238,21 +238,6 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
 
   return (
     <section className="scheduling-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Internal schedule</p>
-          <h2>Scheduling</h2>
-        </div>
-        <span className="status-pill">{scheduleItems.length} calendar items</span>
-      </div>
-
-      <p className="module-description">
-        Compact internal calendar. Times are saved in UTC and shown in {localTimeZone()}.
-      </p>
-
-      {error && !modalOpen && <div className="alert-error">{error}</div>}
-      {statusMessage && !modalOpen && <div className="alert-success">{statusMessage}</div>}
-
       <div className="calendar-shell">
         <div className="panel calendar-panel">
           <div className="calendar-toolbar">
@@ -400,6 +385,7 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
           </form>
         </div>
       )}
+      <StatusToast error={!modalOpen ? error : null} success={!modalOpen ? statusMessage : null} onDismiss={() => { setError(null); setStatusMessage(null); }} />
     </section>
   );
 }

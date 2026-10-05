@@ -36,3 +36,7 @@ jdhub-cloud/
 # Temporary files
 .tmp/
 tmp/
+
+# other
+valheim-farming-mods/
+valheim-wisplight-range/

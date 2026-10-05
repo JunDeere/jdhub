@@ -765,19 +765,19 @@ h3 {
 }
 
 .topbar {
-  min-height: 76px;
+  min-height: 64px;
   display: grid;
   grid-template-columns: minmax(150px, 220px) minmax(260px, 1fr) auto;
   gap: 18px;
   align-items: center;
-  padding: 16px 24px;
+  padding: 10px 24px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
 .topbar h2 {
   font-size: 20px;
-  margin-top: 2px;
+  margin: 0;
 }
 
 .topbar-title {
@@ -5662,7 +5662,8 @@ h3 {
   margin-right: 0;
 }
 
-.file-toast {
+.file-toast,
+.status-toast {
   position: fixed;
   z-index: 1400;
   left: 50%;
@@ -5681,22 +5682,26 @@ h3 {
   transform: translateX(-50%);
 }
 
-.file-toast.is-error {
+.file-toast.is-error,
+.status-toast.is-error {
   border-color: rgba(180, 35, 24, 0.38);
   color: var(--danger);
 }
 
-.file-toast.is-success {
+.file-toast.is-success,
+.status-toast.is-success {
   border-color: rgba(15, 118, 110, 0.35);
   color: var(--primary-strong);
 }
 
-.file-toast span {
+.file-toast span,
+.status-toast span {
   color: var(--text);
   line-height: 1.4;
 }
 
-.file-toast button {
+.file-toast button,
+.status-toast button {
   width: 28px;
   height: 28px;
   display: grid;
@@ -5708,7 +5713,8 @@ h3 {
   padding: 0;
 }
 
-.file-toast button:hover {
+.file-toast button:hover,
+.status-toast button:hover {
   background: var(--surface-subtle);
   color: var(--text);
 }

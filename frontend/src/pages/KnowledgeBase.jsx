@@ -6,6 +6,7 @@ import {
   updateKnowledgePage,
 } from '../api/knowledge.js';
 import { getProjects } from '../api/projects.js';
+import StatusToast from '../components/StatusToast.jsx';
 import { formatLocalDateTime } from '../utils/dateTime.js';
 import { hasValidationErrors, requiredText } from '../utils/formValidation.js';
 
@@ -152,18 +153,6 @@ export default function KnowledgeBase({ token, refreshKey, onKnowledgeChanged })
 
   return (
     <section className="knowledge-base-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Personal documentation</p>
-          <h2>Knowledge Base</h2>
-        </div>
-        <span className="status-pill">{pages.length} visible pages</span>
-      </div>
-
-      <p className="module-description">
-        Store reusable notes, guides, commands, fixes, and reference material. This MVP keeps editing simple and searchable without rich text.
-      </p>
-
       <div className="project-layout">
         <form className="panel utility-form" noValidate onSubmit={handleSubmit}>
           <div className="control-row">
@@ -224,9 +213,6 @@ export default function KnowledgeBase({ token, refreshKey, onKnowledgeChanged })
               />
             </label>
           </div>
-
-          {error && <div className="alert-error">{error}</div>}
-          {status && <div className="alert-success">{status}</div>}
 
           <button className="primary-button" disabled={saving} type="submit">
             {saving ? 'Saving...' : editingId ? 'Update page' : 'Save page'}
@@ -309,6 +295,7 @@ export default function KnowledgeBase({ token, refreshKey, onKnowledgeChanged })
           </div>
         </div>
       </div>
+      <StatusToast error={error} success={status} onDismiss={() => { setError(null); setStatus(null); }} />
     </section>
   );
 }

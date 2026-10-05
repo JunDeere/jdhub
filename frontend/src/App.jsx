@@ -740,7 +740,6 @@ function PrivateApp() {
                       Home
                     </button>
                   )}
-                  <p className="eyebrow">Current view</p>
                   <h2>{activeItem?.label || 'Home'}</h2>
                 </div>
               </div>

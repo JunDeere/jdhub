@@ -402,16 +402,6 @@ export default function Dashboard({ token, user, refreshKey, onNavigate }) {
 
   return (
     <section className="dashboard-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Home</p>
-          <h2>Home</h2>
-        </div>
-        <div className="dashboard-heading-actions">
-          <span className="status-pill">Protected</span>
-        </div>
-      </div>
-
       {error && <div className="alert-error">{error}</div>}
 
       {!dashboard ? (

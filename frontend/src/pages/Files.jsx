@@ -573,13 +573,6 @@ export default function Files({ token }) {
 
   return (
     <section className="files-page">
-      <div className="files-page-header compact">
-        <div className="files-title-copy">
-          <p className="eyebrow">Private cloud</p>
-          <h2>Files</h2>
-          <p className="module-description">Organize personal files and project documents in your private JDHub storage.</p>
-        </div>
-      </div>
       <input className="visually-hidden" multiple onChange={(event) => uploadDirectly(event.target.files)} ref={fileInputRef} type="file" />
 
       <div className="file-storage-strip">

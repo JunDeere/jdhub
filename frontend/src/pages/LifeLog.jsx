@@ -2,6 +2,7 @@ import { Copy, Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { archiveEntry, createEntry, getEntries, updateEntry } from '../api/entries.js';
 import { getNotepadSyncStatus } from '../api/notepadSync.js';
+import StatusToast from '../components/StatusToast.jsx';
 
 function newDraftTab() {
   return {
@@ -66,8 +67,6 @@ export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
     () => tabs.find((tab) => tab.tabId === activeTabId) || tabs[0] || null,
     [tabs, activeTabId],
   );
-
-  const savedCount = tabs.filter((tab) => tab.entryId).length;
 
   useEffect(() => {
     let cancelled = false;
@@ -264,16 +263,6 @@ export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
 
   return (
     <section className="notes-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Notepad</p>
-          <h2>Notes</h2>
-        </div>
-        <span className="status-pill">
-          {saving ? 'Autosaving...' : `${savedCount} saved notes`}
-        </span>
-      </div>
-
       <div className={syncStatus?.connected ? 'notepad-backup-banner connected' : 'notepad-backup-banner'}>
         <div>
           <strong>{syncStatus?.connected ? 'Windows Notepad backup connected' : 'Windows Notepad backup not connected yet'}</strong>
@@ -367,13 +356,8 @@ export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
           value={activeTab?.content || ''}
         />
 
-        {(error || status) && (
-          <div className="notepad-status">
-            {error && <div className="alert-error">{error}</div>}
-            {status && <div className="alert-success">{status}</div>}
-          </div>
-        )}
       </div>
+      <StatusToast error={error} success={status} onDismiss={() => { setError(null); setStatus(null); }} />
     </section>
   );
 }

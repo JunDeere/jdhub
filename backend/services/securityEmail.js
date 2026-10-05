@@ -11,15 +11,15 @@ function emailVerificationRequired(user) {
 }
 
 function createTransport() {
-  const host = process.env.SMTP_HOST;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const host = process.env.SMTP_HOST?.trim();
+  const user = process.env.SMTP_USER?.trim();
+  const pass = process.env.SMTP_PASS?.trim();
   if (!host || !user || !pass) return null;
 
   return nodemailer.createTransport({
     host,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === 'true',
+    port: Number(process.env.SMTP_PORT?.trim() || 587),
+    secure: process.env.SMTP_SECURE?.trim().toLowerCase() === 'true',
     auth: { user, pass },
   });
 }
@@ -30,7 +30,7 @@ async function sendLoginCode({ email, code, ip, userAgent }) {
     throw new Error('Email verification is enabled, but SMTP is not configured');
   }
 
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = process.env.SMTP_FROM?.trim() || process.env.SMTP_USER?.trim();
   await transport.sendMail({
     from,
     to: email,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getFinanceForecast, updateForecastItemStatus } from '../api/financeForecasts.js';
 import { createTransaction, getTransactions, updateTransaction } from '../api/transactions.js';
+import StatusToast from '../components/StatusToast.jsx';
 import { dateInputToUtcIso, formatLocalDate, toUtcDateInput } from '../utils/dateTime.js';
 import { exactLength, hasValidationErrors, positiveNumber, requiredText } from '../utils/formValidation.js';
 
@@ -212,18 +213,6 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
 
   return (
     <section className="finance-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Manual finance</p>
-          <h2>Finance</h2>
-        </div>
-        <span className="status-pill">{transactions.length} transactions</span>
-      </div>
-
-      <p className="module-description">
-        Track manual income and expense transactions. Receipts, OCR, bank CSV imports, and SQL-backed accounting are later phases.
-      </p>
-
       <div className="finance-view-tabs" role="tablist" aria-label="Finance views">
         {financeViews.map((view) => (
           <button
@@ -530,9 +519,6 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
             />
           </label>
 
-          {error && <div className="alert-error">{error}</div>}
-          {statusMessage && <div className="alert-success">{statusMessage}</div>}
-
           <button className="primary-button" disabled={saving} type="submit">
             {saving ? 'Saving...' : editingId ? 'Update transaction' : 'Save transaction'}
           </button>
@@ -581,6 +567,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
         </div>
       </div>
       )}
+      <StatusToast error={error} success={statusMessage} onDismiss={() => { setError(null); setStatusMessage(null); }} />
     </section>
   );
 }

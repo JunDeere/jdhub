@@ -5,6 +5,7 @@ import {
   getIntegrationRecords,
   updateIntegrationRecord,
 } from '../api/integrations.js';
+import StatusToast from '../components/StatusToast.jsx';
 import { hasValidationErrors, requiredText } from '../utils/formValidation.js';
 
 const statuses = ['planned', 'researching', 'ready', 'active', 'paused', 'blocked'];
@@ -146,18 +147,6 @@ export default function Integrations({ token, refreshKey, onIntegrationsChanged 
 
   return (
     <section className="integrations-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Integration planning</p>
-          <h2>Integrations</h2>
-        </div>
-        <span className="status-pill">{records.length} planned records</span>
-      </div>
-
-      <p className="module-description">
-        Track future integration plans and setup notes. This page does not authenticate providers or trigger external webhooks.
-      </p>
-
       <div className="utility-layout">
         <form className="panel utility-form" noValidate onSubmit={handleSubmit}>
           <div className="control-row">
@@ -214,9 +203,6 @@ export default function Integrations({ token, refreshKey, onIntegrationsChanged 
             <input value={form.tags} onChange={(event) => updateForm('tags', event.target.value)} placeholder="calendar, automation, future" />
           </label>
 
-          {error && <div className="alert-error">{error}</div>}
-          {statusMessage && <div className="alert-success">{statusMessage}</div>}
-
           <button className="primary-button" disabled={saving} type="submit">
             {saving ? 'Saving...' : editingId ? 'Update integration' : 'Save integration'}
           </button>
@@ -261,6 +247,7 @@ export default function Integrations({ token, refreshKey, onIntegrationsChanged 
           </div>
         </div>
       </div>
+      <StatusToast error={error} success={statusMessage} onDismiss={() => { setError(null); setStatusMessage(null); }} />
     </section>
   );
 }

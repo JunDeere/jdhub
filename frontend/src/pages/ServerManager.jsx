@@ -5,6 +5,7 @@ import {
   getServerRecords,
   updateServerRecord,
 } from '../api/serverRecords.js';
+import StatusToast from '../components/StatusToast.jsx';
 import { formatLocalDateTime, localDateTimeInputToUtcIso, toLocalDateTimeInput } from '../utils/dateTime.js';
 import { hasValidationErrors, positiveNumber, requiredText } from '../utils/formValidation.js';
 
@@ -166,18 +167,6 @@ export default function ServerManager({ token, refreshKey, onServerRecordsChange
 
   return (
     <section className="server-manager-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Infrastructure records</p>
-          <h2>Infrastructure</h2>
-        </div>
-        <span className="status-pill">{records.length} manual records</span>
-      </div>
-
-      <p className="module-description">
-        Maintain administrative records for servers, incidents, containers, and ports. This page does not run commands or control containers.
-      </p>
-
       <div className="metric-grid">
         {recordTypes.map((type) => (
           <div className="metric-card" key={type}>
@@ -262,9 +251,6 @@ export default function ServerManager({ token, refreshKey, onServerRecordsChange
             <input value={form.tags} onChange={(event) => updateForm('tags', event.target.value)} placeholder="docker, nginx, home-lab" />
           </label>
 
-          {error && <div className="alert-error">{error}</div>}
-          {statusMessage && <div className="alert-success">{statusMessage}</div>}
-
           <button className="primary-button" disabled={saving} type="submit">
             {saving ? 'Saving...' : editingId ? 'Update record' : 'Save record'}
           </button>
@@ -311,6 +297,7 @@ export default function ServerManager({ token, refreshKey, onServerRecordsChange
           </div>
         </div>
       </div>
+      <StatusToast error={error} success={statusMessage} onDismiss={() => { setError(null); setStatusMessage(null); }} />
     </section>
   );
 }

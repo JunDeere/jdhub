@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { getProjects } from '../api/projects.js';
 import { createTask, getTasks, markTaskDone, updateTask, updateTaskStatus } from '../api/tasks.js';
+import StatusToast from '../components/StatusToast.jsx';
 import { dateInputToUtcIso, formatLocalDate, toUtcDateInput } from '../utils/dateTime.js';
 import { hasValidationErrors, requiredText } from '../utils/formValidation.js';
 
@@ -307,19 +308,6 @@ export default function Tasks({ token, refreshKey, onTasksChanged }) {
 
   return (
     <section className="tasks-page">
-      <div className="task-page-header">
-        <div>
-          <p className="eyebrow">Work queue</p>
-          <h2>Tasks</h2>
-          <p className="module-description">
-            Keep personal work independent, or connect a task to a project when it contributes to a larger goal.
-          </p>
-        </div>
-        <button className="primary-button task-create-button" onClick={openNewTask} type="button">
-          <Plus size={17} aria-hidden="true" /> New task
-        </button>
-      </div>
-
       <div className="task-overview-grid" aria-label="Task summary">
         <button className={`task-overview-card ${view === 'open' ? 'is-active' : ''}`} onClick={() => chooseView('open')} type="button">
           <span className="task-overview-icon"><ListTodo size={18} /></span><span><strong>{summary.open}</strong><small>Open tasks</small></span>
@@ -348,9 +336,6 @@ export default function Tasks({ token, refreshKey, onTasksChanged }) {
           </div>
         </div>
       </div>
-
-      {error && <div className="alert-error">{error}</div>}
-      {statusMessage && <div className="alert-success">{statusMessage}</div>}
 
       <div className={`task-workspace ${editorOpen ? 'is-editing' : ''}`}>
         {editorOpen && (
@@ -407,6 +392,9 @@ export default function Tasks({ token, refreshKey, onTasksChanged }) {
               <select aria-label="Sort tasks" className="task-filter" onChange={(event) => setSortMode(event.target.value)} value={sortMode}>
                 <option value="due">Sort: due date</option><option value="priority">Sort: priority</option><option value="title">Sort: title</option>
               </select>
+              <button className="primary-button task-create-button" onClick={openNewTask} type="button">
+                <Plus size={17} aria-hidden="true" /> New task
+              </button>
             </div>
           </div>
 
@@ -517,6 +505,7 @@ export default function Tasks({ token, refreshKey, onTasksChanged }) {
           )}
         </div>
       </div>
+      <StatusToast error={error} success={statusMessage} onDismiss={() => { setError(null); setStatusMessage(null); }} />
     </section>
   );
 }

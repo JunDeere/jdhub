@@ -480,10 +480,6 @@ const CommandCenter = forwardRef(function CommandCenter({
 
   return (
     <section className="command-center-page assistant-page">
-      <div className="assistant-page-heading">
-        <div><p className="eyebrow">One assistant across JDHub</p><h3>Command Center</h3></div>
-        <span className="status-pill">{history.length} recent commands</span>
-      </div>
       <div className="assistant-page-layout">
         {chatPanel}
         <aside className="assistant-context-panel">

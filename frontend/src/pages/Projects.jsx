@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { archiveProject, createProject, getProjects, updateProject } from '../api/projects.js';
+import StatusToast from '../components/StatusToast.jsx';
 import { dateInputToUtcIso, formatLocalDate, toUtcDateInput } from '../utils/dateTime.js';
 import { dateOrder, hasValidationErrors, requiredText } from '../utils/formValidation.js';
 
@@ -203,19 +204,6 @@ export default function Projects({ token, refreshKey, onProjectsChanged }) {
 
   return (
     <section className="projects-page">
-      <div className="project-page-header">
-        <div>
-          <p className="eyebrow">Build tracking</p>
-          <p className="module-description">
-            Organize active work, long-term builds, and paused ideas in one focused workspace.
-          </p>
-        </div>
-        <button className="primary-button project-create-button" onClick={openNewProject} type="button">
-          <Plus size={17} />
-          New project
-        </button>
-      </div>
-
       <div className="project-overview-grid" aria-label="Project overview">
         <article className="project-overview-card">
           <span className="project-overview-icon active"><FolderKanban size={18} /></span>
@@ -234,9 +222,6 @@ export default function Projects({ token, refreshKey, onProjectsChanged }) {
           <div><strong>{projectSummary.linkedItems}</strong><span>Linked items</span></div>
         </article>
       </div>
-
-      {status && <div className="alert-success">{status}</div>}
-      {error && !editorOpen && <div className="alert-error">{error}</div>}
 
       <div className={`project-workspace${editorOpen ? ' is-editing' : ''}`}>
         {editorOpen && (
@@ -371,6 +356,9 @@ export default function Projects({ token, refreshKey, onProjectsChanged }) {
                   <option key={projectStatus} value={projectStatus}>{label(projectStatus)}</option>
                 ))}
               </select>
+              <button className="primary-button project-create-button" onClick={openNewProject} type="button">
+                <Plus size={17} /> New project
+              </button>
             </div>
           </div>
 
@@ -450,6 +438,7 @@ export default function Projects({ token, refreshKey, onProjectsChanged }) {
           )}
         </div>
       </div>
+      <StatusToast error={!editorOpen ? error : null} success={status} onDismiss={() => { setError(null); setStatus(null); }} />
     </section>
   );
 }

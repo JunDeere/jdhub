@@ -49,18 +49,6 @@ export default function ModuleStatus({ token, health, refreshKey }) {
 
   return (
     <section className="module-status-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">System overview</p>
-          <h2>Module Status</h2>
-        </div>
-        <span className="status-pill">Local system</span>
-      </div>
-
-      <p className="module-description">
-        Track which JDHub modules are available, ready for data, or still planned.
-      </p>
-
       {error && <div className="alert-error">{error}</div>}
 
       <div className="dashboard-grid">

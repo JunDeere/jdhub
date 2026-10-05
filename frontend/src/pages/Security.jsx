@@ -9,6 +9,7 @@ import {
   updateUserEmailVerification,
   updateUserStatus,
 } from "../api/security.js";
+import StatusToast from "../components/StatusToast.jsx";
 
 function when(value) {
   return value ? new Date(value).toLocaleString() : "Never";
@@ -173,17 +174,6 @@ export default function Security({ token }) {
 
   return (
     <section className="module-page security-page">
-      <div className="page-heading-row">
-        <div>
-          <p className="eyebrow">System management</p>
-          <h2>Administration</h2>
-          <p className="module-description">
-            Manage approved users, authentication activity, and access protection.
-          </p>
-        </div>
-        <span className="status-chip">Admin only</span>
-      </div>
-
       <div className="segmented-control administration-tabs" role="tablist" aria-label="Administration sections">
         <button aria-selected={activeTab === "users"} className={activeTab === "users" ? "selected" : ""} onClick={() => setActiveTab("users")} role="tab" type="button">
           Users
@@ -192,8 +182,6 @@ export default function Security({ token }) {
           Security
         </button>
       </div>
-
-      {error && <div className="error-banner">{error}</div>}
 
       {activeTab === "users" && (
         <div className="admin-users-layout" role="tabpanel">
@@ -284,9 +272,6 @@ export default function Security({ token }) {
               </label>
               <button className="primary-button" disabled={creatingUser} type="submit">{creatingUser ? "Creating…" : "Create member"}</button>
             </form>
-            {accountStatus && (
-              <div aria-live="polite" className={accountStatus.type === "error" ? "alert-error" : "alert-success"}>{accountStatus.message}</div>
-            )}
           </article>
         </div>
       )}
@@ -340,6 +325,11 @@ export default function Security({ token }) {
           </div>
         </div>
       )}
+      <StatusToast
+        error={error || (accountStatus?.type === "error" ? accountStatus.message : null)}
+        success={accountStatus?.type === "success" ? accountStatus.message : null}
+        onDismiss={() => { setError(""); setAccountStatus(null); }}
+      />
     </section>
   );
 }
