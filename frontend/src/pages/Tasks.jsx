@@ -6,6 +6,8 @@ import {
   Circle,
   CircleAlert,
   ClipboardCheck,
+  Eye,
+  EyeOff,
   FolderKanban,
   LayoutGrid,
   List,
@@ -87,6 +89,7 @@ export default function Tasks({ token, refreshKey, onTasksChanged }) {
   const [draggingTaskId, setDraggingTaskId] = useState('');
   const [dragOverStatus, setDragOverStatus] = useState('');
   const [movingTaskId, setMovingTaskId] = useState('');
+  const [collapsedStatuses, setCollapsedStatuses] = useState({});
 
   const summary = useMemo(() => {
     const active = tasks.filter((task) => activeStatuses.includes(task.status));
@@ -306,33 +309,39 @@ export default function Tasks({ token, refreshKey, onTasksChanged }) {
     moveTask(tasks.find((task) => task._id === taskId), nextStatus);
   };
 
+  const toggleStatusColumn = (status) => {
+    setCollapsedStatuses((current) => ({ ...current, [status]: !current[status] }));
+  };
+
   return (
     <section className="tasks-page">
-      <div className="task-overview-grid" aria-label="Task summary">
-        <button className={`task-overview-card ${view === 'open' ? 'is-active' : ''}`} onClick={() => chooseView('open')} type="button">
-          <span className="task-overview-icon"><ListTodo size={18} /></span><span><strong>{summary.open}</strong><small>Open tasks</small></span>
-        </button>
-        <button className={`task-overview-card ${view === 'today' ? 'is-active' : ''}`} onClick={() => chooseView('today')} type="button">
-          <span className="task-overview-icon today"><CalendarClock size={18} /></span><span><strong>{summary.today}</strong><small>Due today</small></span>
-        </button>
-        <button className={`task-overview-card ${view === 'overdue' ? 'is-active' : ''}`} onClick={() => chooseView('overdue')} type="button">
-          <span className="task-overview-icon overdue"><CircleAlert size={18} /></span><span><strong>{summary.overdue}</strong><small>Overdue</small></span>
-        </button>
-        <button className={`task-overview-card ${view === 'completed' ? 'is-active' : ''}`} onClick={() => chooseView('completed')} type="button">
-          <span className="task-overview-icon complete"><CheckCircle2 size={18} /></span><span><strong>{summary.completed}</strong><small>Completed</small></span>
-        </button>
-      </div>
-
-      <div className="task-scope-strip">
-        <div className="task-scope-heading">
-          <span>Workload structure</span>
-          <strong>{summary.completionRate}% complete</strong>
+      <div className="task-summary-row">
+        <div className="task-overview-grid" aria-label="Task summary">
+          <button className={`task-overview-card ${view === 'open' ? 'is-active' : ''}`} onClick={() => chooseView('open')} type="button">
+            <span className="task-overview-icon"><ListTodo size={18} /></span><span><strong>{summary.open}</strong><small>Open tasks</small></span>
+          </button>
+          <button className={`task-overview-card ${view === 'today' ? 'is-active' : ''}`} onClick={() => chooseView('today')} type="button">
+            <span className="task-overview-icon today"><CalendarClock size={18} /></span><span><strong>{summary.today}</strong><small>Due today</small></span>
+          </button>
+          <button className={`task-overview-card ${view === 'overdue' ? 'is-active' : ''}`} onClick={() => chooseView('overdue')} type="button">
+            <span className="task-overview-icon overdue"><CircleAlert size={18} /></span><span><strong>{summary.overdue}</strong><small>Overdue</small></span>
+          </button>
+          <button className={`task-overview-card ${view === 'completed' ? 'is-active' : ''}`} onClick={() => chooseView('completed')} type="button">
+            <span className="task-overview-icon complete"><CheckCircle2 size={18} /></span><span><strong>{summary.completed}</strong><small>Completed</small></span>
+          </button>
         </div>
-        <div className="task-scope-details">
-          <span><FolderKanban size={15} />{summary.linked} project-linked</span>
-          <span><UserRound size={15} />{summary.independent} independent</span>
-          <div className="task-progress-track" aria-label={`${summary.completionRate}% of tracked tasks completed`}>
-            <span style={{ width: `${summary.completionRate}%` }} />
+
+        <div className="task-scope-strip">
+          <div className="task-scope-heading">
+            <span>Workload structure</span>
+            <strong>{summary.completionRate}% complete</strong>
+          </div>
+          <div className="task-scope-details">
+            <span><FolderKanban size={15} />{summary.linked} project-linked</span>
+            <span><UserRound size={15} />{summary.independent} independent</span>
+            <div className="task-progress-track" aria-label={`${summary.completionRate}% of tracked tasks completed`}>
+              <span style={{ width: `${summary.completionRate}%` }} />
+            </div>
           </div>
         </div>
       </div>
@@ -410,7 +419,7 @@ export default function Tasks({ token, refreshKey, onTasksChanged }) {
             <div className="task-board">
               {boardColumns.map((column) => (
                 <section
-                  className={`task-board-column status-${column.status} ${dragOverStatus === column.status ? 'is-drag-over' : ''}`}
+                  className={`task-board-column status-${column.status} ${dragOverStatus === column.status ? 'is-drag-over' : ''} ${collapsedStatuses[column.status] ? 'is-collapsed' : ''}`}
                   key={column.status}
                   onDragEnter={(event) => { event.preventDefault(); setDragOverStatus(column.status); }}
                   onDragLeave={(event) => {
@@ -423,8 +432,18 @@ export default function Tasks({ token, refreshKey, onTasksChanged }) {
                     <span className={`task-status-dot ${column.status}`} />
                     <h4>{column.label}</h4>
                     <strong>{column.tasks.length}</strong>
+                    <button
+                      aria-expanded={!collapsedStatuses[column.status]}
+                      aria-label={`${collapsedStatuses[column.status] ? 'Show' : 'Hide'} ${column.label} tasks`}
+                      className="task-column-toggle"
+                      onClick={() => toggleStatusColumn(column.status)}
+                      title={`${collapsedStatuses[column.status] ? 'Show' : 'Hide'} ${column.label}`}
+                      type="button"
+                    >
+                      {collapsedStatuses[column.status] ? <Eye size={15} /> : <EyeOff size={15} />}
+                    </button>
                   </div>
-                  <div className="task-board-stack">
+                  {!collapsedStatuses[column.status] && <div className="task-board-stack">
                     {column.tasks.length === 0 ? (
                       <div className="task-board-empty">No tasks here</div>
                     ) : column.tasks.map((task) => (
@@ -467,7 +486,7 @@ export default function Tasks({ token, refreshKey, onTasksChanged }) {
                         {task.tags?.length > 0 && <div className="tag-row">{task.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div>}
                       </article>
                     ))}
-                  </div>
+                  </div>}
                 </section>
               ))}
             </div>

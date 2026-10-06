@@ -1,6 +1,7 @@
 import {
   Activity,
   Bell,
+  BookLock,
   BookOpen,
   Bot,
   CalendarDays,
@@ -11,6 +12,7 @@ import {
   FileText,
   FolderKanban,
   House,
+  Menu,
   Plug,
   SearchCheck,
   ShieldCheck,
@@ -22,6 +24,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import CommandCenter from './pages/CommandCenter.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Diary from './pages/Diary.jsx';
 import Finance from './pages/Finance.jsx';
 import Files from './pages/Files.jsx';
 import Integrations from './pages/Integrations.jsx';
@@ -46,6 +49,7 @@ const navIcons = {
   dashboard: House,
   'command-center': SearchCheck,
   'life-log': FileText,
+  diary: BookLock,
   tasks: ClipboardList,
   scheduling: CalendarDays,
   finance: CircleDollarSign,
@@ -71,6 +75,7 @@ const navGroups = [
   {
     label: 'Personal',
     items: [
+      { id: 'diary', label: 'Diary' },
       { id: 'life-log', label: 'Notes' },
       { id: 'tasks', label: 'Tasks' },
       { id: 'scheduling', label: 'Scheduling' },
@@ -620,6 +625,8 @@ function PrivateApp() {
       ? <ModuleStatus token={token} health={health} refreshKey={dashboardRefreshKey} />
       : activePage === 'life-log'
         ? <LifeLog token={token} refreshKey={moduleRefreshKey} onEntriesChanged={handleDataChanged} />
+      : activePage === 'diary'
+        ? <Diary token={token} />
       : activePage === 'tasks'
         ? <Tasks token={token} refreshKey={moduleRefreshKey} onTasksChanged={handleDataChanged} />
       : activePage === 'finance'
@@ -653,14 +660,6 @@ function PrivateApp() {
           sidebarCollapsed ? 'sidebar-collapsed' : '',
           mobileSidebarOpen ? 'mobile-sidebar-open' : '',
         ].filter(Boolean).join(' ')}>
-          <button
-            aria-label="Open navigation"
-            className="mobile-nav-fab"
-            onClick={() => setMobileSidebarOpen(true)}
-            type="button"
-          >
-            <ChevronRight size={20} />
-          </button>
           <button
             aria-label="Close navigation"
             className="mobile-sidebar-backdrop"
@@ -724,6 +723,15 @@ function PrivateApp() {
           ].filter(Boolean).join(' ')}>
             <header className="topbar">
               <div className="topbar-title">
+                <button
+                  aria-expanded={mobileSidebarOpen}
+                  aria-label="Open module navigation"
+                  className="mobile-nav-fab"
+                  onClick={() => setMobileSidebarOpen(true)}
+                  type="button"
+                >
+                  <Menu size={19} />
+                </button>
                 <button
                   aria-label="Go back"
                   className="back-button"

@@ -353,15 +353,15 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                   <thead><tr><th>Date</th><th>Transaction</th><th>Amount</th><th>Projected balance</th><th>Status</th></tr></thead>
                   <tbody>
                     <tr className="forecast-start-row">
-                      <td>Now</td><td>Current {forecast.account_name}</td><td>—</td><td>{money(forecast.starting_balance, forecast.currency)}</td><td>Snapshot</td>
+                      <td data-label="Date">Now</td><td data-label="Transaction">Current {forecast.account_name}</td><td data-label="Amount">—</td><td data-label="Projected balance">{money(forecast.starting_balance, forecast.currency)}</td><td data-label="Status">Snapshot</td>
                     </tr>
                     {forecast.items.map((item) => (
                       <tr className={`${item.kind} ${item.resolution_status}`} key={item._id}>
-                        <td>{forecastDateLabel(item.date_start, item.date_end)}</td>
-                        <td><strong>{item.label}</strong>{item.is_group && <small>Combined payment</small>}</td>
-                        <td>{item.kind === 'income' ? '+' : '−'}{money(item.amount, forecast.currency)}</td>
-                        <td>{money(item.projected_balance, forecast.currency)}</td>
-                        <td>
+                        <td data-label="Date">{forecastDateLabel(item.date_start, item.date_end)}</td>
+                        <td data-label="Transaction"><strong>{item.label}</strong>{item.is_group && <small>Combined payment</small>}</td>
+                        <td data-label="Amount">{item.kind === 'income' ? '+' : '−'}{money(item.amount, forecast.currency)}</td>
+                        <td data-label="Projected balance">{money(item.projected_balance, forecast.currency)}</td>
+                        <td data-label="Status">
                           <span className={`forecast-resolution-badge ${item.resolution_status}`}>{resolutionLabel(item.resolution_status)}</span>
                           <select aria-label={`Status for ${item.label}`} disabled={updatingForecastItem === item._id} onChange={(event) => handleForecastStatus(item._id, event.target.value)} value={item.status}>
                             <option value="planned">Planned</option>

@@ -55,8 +55,8 @@ function tabFromEntry(entry) {
 }
 
 export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
-  const [tabs, setTabs] = useState(() => [newDraftTab()]);
-  const [activeTabId, setActiveTabId] = useState(() => tabs[0].tabId);
+  const [tabs, setTabs] = useState([]);
+  const [activeTabId, setActiveTabId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -76,9 +76,10 @@ export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
         if (cancelled) return;
         setSyncStatus(desktopStatus);
         const savedTabs = (data.entries || []).map(tabFromEntry);
+        const emptyStateDraft = savedTabs.length ? null : newDraftTab();
 
         setTabs((currentTabs) => {
-          const localDrafts = currentTabs.filter((tab) => !tab.entryId);
+          const localDrafts = currentTabs.filter((tab) => !tab.entryId && (tab.dirty || tab.content.trim()));
           const editedSavedTabs = currentTabs.filter((tab) => tab.entryId && tab.dirty);
           const editedIds = new Set(editedSavedTabs.map((tab) => tab.entryId));
           const mergedSavedTabs = savedTabs.map((tab) => (
@@ -87,8 +88,9 @@ export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
               : tab
           ));
           const nextTabs = [...localDrafts, ...mergedSavedTabs];
-          return nextTabs.length ? nextTabs : [newDraftTab()];
+          return nextTabs.length ? nextTabs : [emptyStateDraft || newDraftTab()];
         });
+        setActiveTabId((currentId) => currentId || savedTabs[0]?.tabId || emptyStateDraft?.tabId || null);
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);

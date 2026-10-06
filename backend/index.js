@@ -4,6 +4,7 @@ require('dotenv').config();
 const connectDB = require('./db');
 const authRoutes = require('./routes/auth');
 const commandRoutes = require('./routes/commands');
+const diaryRoutes = require('./routes/diary');
 const entryRoutes = require('./routes/entries');
 const financeForecastRoutes = require('./routes/financeForecasts');
 const fileRoutes = require('./routes/files');
@@ -55,6 +56,7 @@ app.get('/health', (req, res) => {
 
 app.use('/api/auth', authRateLimit(), authRoutes);
 app.use('/api/commands', commandRoutes);
+app.use('/api/diary', diaryRoutes);
 app.use('/api/entries', entryRoutes);
 app.use('/api/finance-forecasts', financeForecastRoutes);
 app.use('/api/files', fileRoutes);

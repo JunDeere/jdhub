@@ -92,6 +92,7 @@ test('core private routes reject missing bearer tokens', async () => {
     '/api/tasks',
     '/api/schedule',
     '/api/entries',
+    '/api/diary',
     '/api/projects',
     '/api/transactions',
     '/api/finance-forecasts',

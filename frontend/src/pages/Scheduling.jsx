@@ -323,11 +323,11 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
 
       {modalOpen && (
         <div className="modal-backdrop" role="presentation">
-          <form className="modal-card schedule-modal utility-form" noValidate onSubmit={handleSubmit}>
+          <form aria-labelledby="schedule-modal-title" aria-modal="true" className="modal-card schedule-modal utility-form" noValidate onSubmit={handleSubmit} role="dialog">
             <div className="modal-header">
               <div>
                 <p className="eyebrow">{editingId ? 'Edit schedule' : 'Add schedule'}</p>
-                <h3>{editingId ? 'Edit Schedule Item' : 'New Schedule Item'}</h3>
+                <h3 id="schedule-modal-title">{editingId ? 'Edit Schedule Item' : 'New Schedule Item'}</h3>
               </div>
               <button aria-label="Close schedule modal" className="icon-only-button" onClick={closeModal} type="button">
                 <X size={18} />
