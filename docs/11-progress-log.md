@@ -302,18 +302,17 @@ We made Windows 11 Notepad the primary writing app while keeping JDHub Notes as 
 
 ### What We Worked On
 
-We separated planned cash flow from completed finance transactions and converted the supplied September–December 2026 GCash schedule into a private forecast.
+We separated planned cash flow from completed finance transactions and added private, user-scoped forecasts.
 
 ### What We Finished
 
 - Added a user-scoped Finance Forecast model and protected API.
-- Added a running-balance schedule starting from the supplied GCash snapshot.
-- Preserved combined Nov/Dec date-range payments while keeping detailed October payments visible.
+- Added a running-balance schedule starting from a user-provided balance.
+- Supported grouped date-range payments alongside individual scheduled payments.
 - Added planned, completed, and skipped status controls; skipped items are removed from projected totals.
-- Added a Financing overview for GGives, GLoan, SLoan, and SPayLater.
-- Excluded the removed installment from both the forecast data and interface.
+- Added a Financing overview for installment and loan records.
 - Kept forecast entries separate from actual monthly income, expense, and net totals.
-- Added an idempotent owner-specific seed script so the plan can be updated without duplication.
+- Added an idempotent forecast seed script. The tracked seed now uses synthetic examples only; personal forecasts belong in the private database.
 
 ### Verification
 
@@ -321,13 +320,13 @@ We separated planned cash flow from completed finance transactions and converted
 - Frontend production build passed.
 - Backend smoke tests passed.
 - Backend syntax checks passed.
-- Stored forecast verified with 28 scheduled entries, 7 financing records, ₱112,000 planned income, ₱101,413.16 planned payments, and a ₱24,715.17 ending balance.
+- Verified stored forecast entries, financing records, and projected totals. Personal financial details are omitted from this journal.
 
 ### Possible Next Steps
 
 - Add manual forecast-entry creation and editing.
 - Convert completed forecast entries into actual transactions with confirmation.
-- Add recurring schedule generation beyond December 2026.
+- Add recurring schedule generation for future forecast periods.
 
 ---
 

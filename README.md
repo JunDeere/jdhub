@@ -191,6 +191,18 @@ On a server using a local reverse proxy or Cloudflare Tunnel, set
 `FRONTEND_BIND=127.0.0.1`, `BACKEND_BIND=127.0.0.1`, and
 `MONGO_BIND=127.0.0.1` so those ports are not exposed directly to the network.
 
+## Synthetic Finance Forecast Fixture
+
+The tracked finance seed contains fictional data only. Keep personal balances,
+loan details, payment schedules, exports, and screenshots out of source control.
+
+For a disposable development database and test account, explicitly set
+`MONGO_URI` and `FORECAST_USER_ID`, then run `npm run seed:finance-forecast` from
+`backend`. Do not run the seed against a production database or a real account.
+It upserts only the named `Synthetic example forecast v1` fixture and does not
+migrate, rename, or remove existing private forecasts. Re-running resets that
+synthetic fixture's data; it is not a personal-data import tool.
+
 ## MCP Planning
 
 JDHub does not run a full MCP server yet. The authenticated endpoint below lists the current API functions that the future MCP server should wrap:
