@@ -215,3 +215,11 @@ Authorization: Bearer <JDHub token>
 ## Current Rule
 
 Make the existing modules clear, safe, and reliable before adding more major modules.
+
+## Optional Portfolio Demo Bridge
+
+The embedded portfolio bridge is **disabled by default** in both production and
+Vite development. It installs only for an authenticated account whose `isDemo`
+value is exactly `true`, and only inside an iframe. See
+[configuration and verification](docs/14-portfolio-demo-bridge.md) before enabling
+it. No bridge settings grant access to real accounts or private context.

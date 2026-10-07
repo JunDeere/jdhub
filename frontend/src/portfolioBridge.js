@@ -11,6 +11,29 @@ export const SAFE_DEMO_TARGETS = Object.freeze([
   'knowledge-base',
 ]);
 
+// Reject normalization: configuration must already be a single canonical origin.
+export function validatePortfolioParentOrigin(value) {
+  if (typeof value !== 'string' || /[\s*]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.origin !== value || url.username || url.password
+      || url.search || url.hash || url.port === '0') return null;
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(url.hostname)) return null;
+    if (url.hostname.length > 253 || url.hostname.split('.').some((label) => label.length > 63)) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function getPortfolioParentOrigin(env = {}) {
+  if (env.DEV === true) {
+    return env.VITE_PORTFOLIO_DEV_BRIDGE_ENABLED === 'true' ? DEV_PORTFOLIO_ORIGIN : null;
+  }
+  if (env.PROD !== true || env.VITE_PORTFOLIO_BRIDGE_ENABLED !== 'true') return null;
+  return validatePortfolioParentOrigin(env.VITE_PORTFOLIO_PARENT_ORIGIN);
+}
+
 const SAFE_TARGETS = new Set(SAFE_DEMO_TARGETS);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -25,8 +48,8 @@ function validEnvelope(data) {
   return data?.channel === PORTFOLIO_CHANNEL
     && data?.version === PORTFOLIO_VERSION
     && data?.projectId === PORTFOLIO_PROJECT
-    && UUID.test(data?.requestId || '')
-    && UUID.test(data?.nonce || '');
+    && typeof data?.requestId === 'string' && UUID.test(data.requestId)
+    && typeof data?.nonce === 'string' && UUID.test(data.nonce);
 }
 
 export function validatePortfolioInit(data, currentNonce = null) {
@@ -83,17 +106,50 @@ export function createPortfolioResult(command, status) {
   };
 }
 
-export function installPortfolioBridge({ navigate }) {
-  if (!import.meta.env.DEV || window.parent === window) return () => {};
+// Resolution means the requested page is present, never just that navigation was requested.
+export function waitForPortfolioPage({ isRendered, signal, windowRef = window, maxFrames = 20 }) {
+  return new Promise((resolve, reject) => {
+    let frame;
+    const finish = (error) => {
+      windowRef.cancelAnimationFrame(frame);
+      signal.removeEventListener('abort', abort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const abort = () => finish(new Error('Portfolio navigation cancelled'));
+    const check = () => {
+      if (signal.aborted) return abort();
+      if (isRendered()) return finish();
+      maxFrames -= 1;
+      if (maxFrames <= 0) return finish(new Error('Navigation did not render before the bridge timeout'));
+      frame = windowRef.requestAnimationFrame(check);
+    };
+    if (signal.aborted) return abort();
+    signal.addEventListener('abort', abort, { once: true });
+    frame = windowRef.requestAnimationFrame(check);
+  });
+}
+
+export function installPortfolioBridge({ navigate, isDemo, env = import.meta.env, windowRef = window }) {
+  const parentOrigin = getPortfolioParentOrigin(env);
+  if (isDemo !== true || !parentOrigin || windowRef.parent === windowRef) return () => {};
 
   let parentNonce = null;
-  const reply = (message) => window.parent.postMessage(message, DEV_PORTFOLIO_ORIGIN);
+  let active = true;
+  const parent = windowRef.parent;
+  const pending = new AbortController();
+  // Keep IDs for this installation. Fail closed at the cap rather than evicting replay protection.
+  const seen = new Set();
+  const reply = (message) => {
+    if (active) parent.postMessage(message, parentOrigin);
+  };
   const receive = async (event) => {
-    if (event.origin !== DEV_PORTFOLIO_ORIGIN || event.source !== window.parent) return;
+    if (!active || event.origin !== parentOrigin || event.source !== parent) return;
 
     if (event.data?.type === 'portfolio:init') {
       const init = validatePortfolioInit(event.data, parentNonce);
-      if (!init) return;
+      if (!init || seen.has(init.requestId) || seen.size >= 4096) return;
+      seen.add(init.requestId);
       parentNonce = init.nonce;
       reply(createPortfolioReady(init));
       return;
@@ -101,23 +157,27 @@ export function installPortfolioBridge({ navigate }) {
 
     if (!parentNonce || event.data?.type !== 'portfolio:command') return;
     const command = validatePortfolioCommand(event.data, parentNonce);
-    if (!command) return;
+    if (!command || seen.has(command.requestId) || seen.size >= 4096) return;
+    seen.add(command.requestId);
     if (command.rejected) {
       reply(createPortfolioResult(command, 'rejected'));
       return;
     }
 
     try {
-      await navigate(command.target, command.cursorRequested);
+      await navigate(command.target, command.cursorRequested, pending.signal);
       reply(createPortfolioResult(command, 'completed'));
     } catch {
       reply(createPortfolioResult(command, 'rejected'));
     }
   };
 
-  window.addEventListener('message', receive);
+  windowRef.addEventListener('message', receive);
   return () => {
+    active = false;
     parentNonce = null;
-    window.removeEventListener('message', receive);
+    pending.abort();
+    seen.clear();
+    windowRef.removeEventListener('message', receive);
   };
 }

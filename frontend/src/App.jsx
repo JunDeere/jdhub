@@ -39,7 +39,7 @@ import Security from './pages/Security.jsx';
 import Tasks from './pages/Tasks.jsx';
 import { getCurrentUser, getDashboard, getHealth, updateCurrentUser } from './api/auth.js';
 import { buildAttentionItems } from './utils/attention.js';
-import { installPortfolioBridge } from './portfolioBridge.js';
+import { installPortfolioBridge, waitForPortfolioPage } from './portfolioBridge.js';
 
 const STORAGE_KEY = 'jdhubToken';
 const THEME_KEY = 'jdhubTheme';
@@ -444,6 +444,7 @@ function PrivateApp() {
     (localStorage.getItem(THEME_KEY) || 'system') === 'system' ? getSystemTheme() : localStorage.getItem(THEME_KEY),
   );
   const assistantRef = useRef(null);
+  const portfolioStopRef = useRef(() => {});
   const activePageRef = useRef(activePage);
 
   useEffect(() => {
@@ -514,6 +515,8 @@ function PrivateApp() {
   };
 
   const handleLogout = () => {
+    portfolioStopRef.current();
+    setPortfolioHighlight(null);
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
     setToken(null);
@@ -546,34 +549,28 @@ function PrivateApp() {
   }, [user?.role]);
 
   useEffect(() => {
-    if (!user?.isDemo) return undefined;
+    if (user?.isDemo !== true) return undefined;
     let highlightTimer;
     const stop = installPortfolioBridge({
-      navigate: (pageId, cursorRequested) => new Promise((resolve, reject) => {
+      isDemo: user.isDemo,
+      navigate: (pageId, cursorRequested, signal) => {
         navigateToPage(pageId);
         if (cursorRequested) setPortfolioHighlight(pageId);
         window.clearTimeout(highlightTimer);
         highlightTimer = window.setTimeout(() => setPortfolioHighlight(null), 1800);
-        let framesRemaining = 20;
-        const confirmRenderedPage = () => {
-          if (document.querySelector(`[data-active-page="${pageId}"]`)) {
-            resolve();
-            return;
-          }
-          framesRemaining -= 1;
-          if (framesRemaining <= 0) {
-            reject(new Error('Navigation did not render before the bridge timeout'));
-            return;
-          }
-          window.requestAnimationFrame(confirmRenderedPage);
-        };
-        window.requestAnimationFrame(confirmRenderedPage);
-      }),
+        return waitForPortfolioPage({
+          signal,
+          isRendered: () => activePageRef.current === pageId
+            && Boolean(document.querySelector(`[data-active-page="${pageId}"]`)),
+        });
+      },
     });
-    return () => {
+    const cleanup = () => {
       window.clearTimeout(highlightTimer);
       stop();
     };
+    portfolioStopRef.current = cleanup;
+    return cleanup;
   }, [navigateToPage, user?.isDemo]);
 
   const navigateBack = () => {
