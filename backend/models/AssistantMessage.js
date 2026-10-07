@@ -9,6 +9,7 @@ const TaskCheckInSchema = new mongoose.Schema({
 
 const AssistantMessageSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  module_id: { type: String, required: true, default: 'command-center', trim: true, index: true },
   role: { type: String, enum: ['user', 'assistant'], required: true },
   content: { type: String, required: true, trim: true, maxlength: 6000 },
   message_type: {

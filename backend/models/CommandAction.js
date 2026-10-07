@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const CommandActionSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   command_message_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CommandMessage', required: true, index: true },
+  module_id: { type: String, required: true, default: 'command-center', trim: true, index: true },
   action_type: {
     type: String,
     enum: ['create_life_log', 'create_task', 'update_task', 'create_transaction'],

@@ -39,6 +39,7 @@ import Security from './pages/Security.jsx';
 import Tasks from './pages/Tasks.jsx';
 import { getCurrentUser, getDashboard, getHealth, updateCurrentUser } from './api/auth.js';
 import { buildAttentionItems } from './utils/attention.js';
+import { installPortfolioBridge } from './portfolioBridge.js';
 
 const STORAGE_KEY = 'jdhubToken';
 const THEME_KEY = 'jdhubTheme';
@@ -438,10 +439,12 @@ function PrivateApp() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem(SIDEBAR_KEY) === 'true');
   const [theme, setTheme] = useState(localStorage.getItem(THEME_KEY) || 'system');
+  const [portfolioHighlight, setPortfolioHighlight] = useState(null);
   const [resolvedTheme, setResolvedTheme] = useState(
     (localStorage.getItem(THEME_KEY) || 'system') === 'system' ? getSystemTheme() : localStorage.getItem(THEME_KEY),
   );
   const assistantRef = useRef(null);
+  const activePageRef = useRef(activePage);
 
   useEffect(() => {
     getHealth()
@@ -518,6 +521,7 @@ function PrivateApp() {
     setAssistantMode('closed');
     setTopbarPrompt('');
     setCheckingSession(false);
+    activePageRef.current = 'dashboard';
     setActivePage('dashboard');
     setPageHistory([]);
   };
@@ -531,17 +535,51 @@ function PrivateApp() {
     setModuleRefreshKey((key) => key + 1);
   }, []);
 
-  const navigateToPage = (pageId) => {
+  const navigateToPage = useCallback((pageId) => {
     const target = findNavItem(pageId);
     if (target?.adminOnly && user?.role !== 'admin') return;
-    setPageHistory((current) => (pageId === activePage ? current : [...current, activePage].slice(-20)));
+    const previousPage = activePageRef.current;
+    setPageHistory((current) => (pageId === previousPage ? current : [...current, previousPage].slice(-20)));
+    activePageRef.current = pageId;
     setActivePage(pageId);
     setMobileSidebarOpen(false);
-  };
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (!user?.isDemo) return undefined;
+    let highlightTimer;
+    const stop = installPortfolioBridge({
+      navigate: (pageId, cursorRequested) => new Promise((resolve, reject) => {
+        navigateToPage(pageId);
+        if (cursorRequested) setPortfolioHighlight(pageId);
+        window.clearTimeout(highlightTimer);
+        highlightTimer = window.setTimeout(() => setPortfolioHighlight(null), 1800);
+        let framesRemaining = 20;
+        const confirmRenderedPage = () => {
+          if (document.querySelector(`[data-active-page="${pageId}"]`)) {
+            resolve();
+            return;
+          }
+          framesRemaining -= 1;
+          if (framesRemaining <= 0) {
+            reject(new Error('Navigation did not render before the bridge timeout'));
+            return;
+          }
+          window.requestAnimationFrame(confirmRenderedPage);
+        };
+        window.requestAnimationFrame(confirmRenderedPage);
+      }),
+    });
+    return () => {
+      window.clearTimeout(highlightTimer);
+      stop();
+    };
+  }, [navigateToPage, user?.isDemo]);
 
   const navigateBack = () => {
     setPageHistory((current) => {
       const previousPage = current[current.length - 1] || 'dashboard';
+      activePageRef.current = previousPage;
       setActivePage(previousPage);
       setMobileSidebarOpen(false);
       setNotificationsOpen(false);
@@ -697,6 +735,7 @@ function PrivateApp() {
                         className={[
                           'nav-item',
                           item.id === activePage ? 'active' : '',
+                          item.id === portfolioHighlight ? 'portfolio-highlight' : '',
                           item.disabled ? 'disabled' : '',
                         ].filter(Boolean).join(' ')}
                         disabled={item.disabled}
@@ -831,7 +870,7 @@ function PrivateApp() {
             <main className={[
               'content-area',
               activePage !== 'command-center' && assistantMode === 'integrated' ? 'assistant-docked' : '',
-            ].filter(Boolean).join(' ')}>
+            ].filter(Boolean).join(' ')} data-active-page={activePage}>
               <div className={[
                 'assistant-workspace',
                 activePage === 'command-center' ? 'command-center-mode' : '',
@@ -840,6 +879,7 @@ function PrivateApp() {
               ].filter(Boolean).join(' ')} style={{ '--assistant-width': `${assistantWidth}px` }}>
                 <CommandCenter
                   ref={assistantRef}
+                  activeModule={activePage}
                   mode={activePage === 'command-center' ? 'page' : assistantMode === 'integrated' ? 'integrated' : assistantMode === 'floating' ? 'floating' : 'minimized'}
                   onClose={() => setAssistantMode('closed')}
                   onCommandSaved={handleAssistantDataChanged}

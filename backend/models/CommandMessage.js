@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const CommandMessageSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   raw_text: { type: String, required: true, trim: true },
+  module_id: { type: String, required: true, default: 'command-center', trim: true, index: true },
   command_type: {
     type: String,
     enum: ['add_note', 'create_task', 'update_task', 'log_expense', 'unknown'],

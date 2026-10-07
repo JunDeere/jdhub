@@ -30,11 +30,11 @@ export async function getAssistantConversation(token) {
   return parseJson(response);
 }
 
-export async function previewCommand(token, rawText) {
+export async function previewCommand(token, rawText, module = 'command-center') {
   const response = await fetch(`${API_BASE}/api/commands/preview`, {
     method: 'POST',
     headers: authHeaders(token),
-    body: JSON.stringify({ raw_text: rawText }),
+    body: JSON.stringify({ raw_text: rawText, module }),
   });
   return parseJson(response);
 }
@@ -56,11 +56,11 @@ export async function cancelCommand(token, id) {
   return parseJson(response);
 }
 
-export async function askCommandAi(token, question) {
+export async function askCommandAi(token, question, module = 'command-center') {
   const response = await fetch(`${API_BASE}/api/commands/ai`, {
     method: 'POST',
     headers: authHeaders(token),
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, module }),
   });
   return parseJson(response);
 }

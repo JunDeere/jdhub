@@ -17,6 +17,24 @@ const assistantExamples = [
   'Create a task to review server backups tomorrow',
 ];
 
+const moduleLabels = {
+  dashboard: 'Home',
+  'command-center': 'Command Center',
+  'life-log': 'Notes',
+  diary: 'Diary (private vault)',
+  tasks: 'Tasks',
+  scheduling: 'Scheduling',
+  finance: 'Finance',
+  projects: 'Projects',
+  'knowledge-base': 'Knowledge Base',
+  files: 'Files (private)',
+  security: 'Administration (private)',
+  'server-manager': 'Infrastructure (private)',
+  integrations: 'Integrations (private)',
+  'module-status': 'Module Status',
+  settings: 'Settings (private)',
+};
+
 function tagsToText(tags) {
   return Array.isArray(tags) ? tags.join(', ') : '';
 }
@@ -44,6 +62,7 @@ function messageId() {
 
 const CommandCenter = forwardRef(function CommandCenter({
   token,
+  activeModule = 'command-center',
   mode = 'page',
   onClose,
   onCommandSaved,
@@ -147,7 +166,7 @@ const CommandCenter = forwardRef(function CommandCenter({
     addMessage('user', prompt);
 
     try {
-      const data = await askCommandAi(token, prompt);
+      const data = await askCommandAi(token, prompt, activeModule);
       if (data.kind === 'action_preview') {
         setTaskCheckIn(null);
         setPreview({ message: data.message, action: data.action });
@@ -165,7 +184,7 @@ const CommandCenter = forwardRef(function CommandCenter({
     } finally {
       setWorking(false);
     }
-  }, [addMessage, refreshHistory, token, working]);
+  }, [activeModule, addMessage, refreshHistory, token, working]);
 
   useImperativeHandle(ref, () => ({
     focus() {
@@ -359,7 +378,7 @@ const CommandCenter = forwardRef(function CommandCenter({
       <div className="assistant-header">
         <div className="assistant-identity">
           <span><Bot aria-hidden="true" size={19} /></span>
-          <div><strong>JDHub Assistant</strong><small>Ask AI or run a command</small></div>
+          <div><strong>JDHub Assistant</strong><small>Context: {moduleLabels[activeModule] || 'Command Center'}</small></div>
         </div>
         <div className="assistant-header-actions">
           {mode !== 'page' && <button aria-label="Show history" aria-pressed={historyOpen} onClick={() => setHistoryOpen((current) => !current)} title="History" type="button"><History size={17} /></button>}
