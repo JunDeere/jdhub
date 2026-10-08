@@ -45,6 +45,12 @@ const STORAGE_KEY = 'jdhubToken';
 const THEME_KEY = 'jdhubTheme';
 const SIDEBAR_KEY = 'jdhubSidebarCollapsed';
 const ASSISTANT_WIDTH_KEY = 'jdhubAssistantWidth';
+const PORTFOLIO_DEMO_PAGE_IDS = new Set(['dashboard', 'projects', 'tasks', 'scheduling', 'knowledge-base']);
+
+function initialActivePage() {
+  const requested = window.location.hash.slice(1);
+  return PORTFOLIO_DEMO_PAGE_IDS.has(requested) ? requested : 'dashboard';
+}
 
 const navIcons = {
   dashboard: House,
@@ -424,7 +430,7 @@ function PrivateApp() {
   const [user, setUser] = useState(null);
   const [health, setHealth] = useState(null);
   const [checkingSession, setCheckingSession] = useState(Boolean(token));
-  const [activePage, setActivePage] = useState('dashboard');
+  const [activePage, setActivePage] = useState(initialActivePage);
   const [pageHistory, setPageHistory] = useState([]);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [moduleRefreshKey, setModuleRefreshKey] = useState(0);
@@ -526,6 +532,9 @@ function PrivateApp() {
     setCheckingSession(false);
     activePageRef.current = 'dashboard';
     setActivePage('dashboard');
+    const url = new URL(window.location.href);
+    url.hash = '';
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`);
     setPageHistory([]);
   };
 
@@ -545,6 +554,11 @@ function PrivateApp() {
     setPageHistory((current) => (pageId === previousPage ? current : [...current, previousPage].slice(-20)));
     activePageRef.current = pageId;
     setActivePage(pageId);
+    if (PORTFOLIO_DEMO_PAGE_IDS.has(pageId)) {
+      const url = new URL(window.location.href);
+      url.hash = pageId === 'dashboard' ? '' : pageId;
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    }
     setMobileSidebarOpen(false);
   }, [user?.role]);
 
@@ -578,6 +592,11 @@ function PrivateApp() {
       const previousPage = current[current.length - 1] || 'dashboard';
       activePageRef.current = previousPage;
       setActivePage(previousPage);
+      if (PORTFOLIO_DEMO_PAGE_IDS.has(previousPage)) {
+        const url = new URL(window.location.href);
+        url.hash = previousPage === 'dashboard' ? '' : previousPage;
+        window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+      }
       setMobileSidebarOpen(false);
       setNotificationsOpen(false);
       return current.slice(0, -1);
