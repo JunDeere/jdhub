@@ -21,6 +21,14 @@ const financeViews = [
   { id: 'transactions', label: 'Transactions' },
 ];
 
+const forecastRanges = [
+  { id: 'week', label: '1 week' },
+  { id: 'month', label: '1 month' },
+  { id: 'quarter', label: '3 months' },
+  { id: 'year', label: '1 year' },
+  { id: 'all', label: 'All' },
+];
+
 const emptyForm = {
   type: 'expense',
   amount: '',
@@ -89,6 +97,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [financeEditor, setFinanceEditor] = useState(null);
   const [editorSaving, setEditorSaving] = useState(false);
   const [editorError, setEditorError] = useState(null);
+  const [forecastRange, setForecastRange] = useState('month');
 
   const financingProviders = useMemo(() => (
     [...new Set((forecast?.financing || []).map((item) => item.provider || 'Financing'))]
@@ -132,6 +141,44 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const financingById = useMemo(() => new Map(
     (forecast?.financing || []).map((item) => [String(item._id), item]),
   ), [forecast]);
+
+  const forecastWindow = useMemo(() => {
+    if (!forecast) return null;
+    const start = new Date(forecast.as_of_date);
+    const end = new Date(start);
+    if (forecastRange === 'week') end.setUTCDate(end.getUTCDate() + 7);
+    if (forecastRange === 'month') end.setUTCMonth(end.getUTCMonth() + 1);
+    if (forecastRange === 'quarter') end.setUTCMonth(end.getUTCMonth() + 3);
+    if (forecastRange === 'year') end.setUTCFullYear(end.getUTCFullYear() + 1);
+
+    const items = forecastRange === 'all'
+      ? forecast.items
+      : forecast.items.filter((item) => new Date(item.date_start) <= end);
+    const included = items.filter((item) => item.status !== 'skipped');
+    const totalIncome = included
+      .filter((item) => item.kind === 'income')
+      .reduce((total, item) => total + Number(item.amount || 0), 0);
+    const totalExpense = included
+      .filter((item) => item.kind === 'expense')
+      .reduce((total, item) => total + Number(item.amount || 0), 0);
+    const resolution = items.reduce((counts, item) => {
+      const status = item.resolution_status || 'upcoming';
+      counts[status] = (counts[status] || 0) + 1;
+      return counts;
+    }, { completed: 0, overdue: 0, due_today: 0, upcoming: 0, skipped: 0 });
+    const endingBalance = items.length
+      ? items[items.length - 1].projected_balance
+      : forecast.starting_balance;
+
+    return {
+      items,
+      resolution,
+      totalIncome,
+      totalExpense,
+      endingBalance,
+      label: forecastRanges.find((range) => range.id === forecastRange)?.label || 'All',
+    };
+  }, [forecast, forecastRange]);
 
   const loadTransactions = async () => {
     setLoading(true);
@@ -499,7 +546,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
             </div>
                 {forecast && (
                   <div className="finance-heading-actions">
-                    <span className="status-pill">Ends at {money(forecast.summary.ending_balance, forecast.currency)}</span>
+                    <span className="status-pill">{forecastWindow.label}: {money(forecastWindow.endingBalance, forecast.currency)}</span>
                     <button className="secondary-button" onClick={openForecastEditor} type="button">Edit current cash</button>
                     <button className="primary-button" onClick={() => openForecastItemEditor()} type="button">Add planned item</button>
                   </div>
@@ -514,21 +561,29 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
             <div className="finance-empty-state"><strong>No forecast yet</strong><p className="muted">Start with the cash you have today, then add expected income and bills.</p><button className="primary-button" onClick={openForecastEditor} type="button">Create forecast</button></div>
           ) : (
             <>
+              <div className="forecast-range-control" aria-label="Forecast time range" role="group">
+                <span>Show forecast for</span>
+                <div>
+                  {forecastRanges.map((range) => (
+                    <button aria-pressed={forecastRange === range.id} className={forecastRange === range.id ? 'active' : ''} key={range.id} onClick={() => setForecastRange(range.id)} type="button">{range.label}</button>
+                  ))}
+                </div>
+              </div>
               <div className="forecast-resolver-summary" role="status">
                 <div>
                   <span className="eyebrow">Auto resolver</span>
-                  <strong>{forecast.resolution?.completed || 0} resolved</strong>
+                  <strong>{forecastWindow.resolution.completed || 0} resolved</strong>
                 </div>
-                <span>{forecast.resolution?.overdue || 0} need review</span>
-                <span>{forecast.resolution?.due_today || 0} due today</span>
-                <span>{forecast.resolution?.upcoming || 0} upcoming</span>
-                <small>Exact dated transactions are matched automatically. Past items without proof remain unresolved.</small>
+                <span>{forecastWindow.resolution.overdue || 0} need review</span>
+                <span>{forecastWindow.resolution.due_today || 0} due today</span>
+                <span>{forecastWindow.resolution.upcoming || 0} upcoming</span>
+                <small>Counts and totals reflect the selected {forecastWindow.label.toLowerCase()} window. Exact dated transactions are matched automatically.</small>
               </div>
               <div className="forecast-summary-grid">
                 <div><span>Starting balance</span><strong>{money(forecast.starting_balance, forecast.currency)}</strong></div>
-                <div><span>Planned income</span><strong className="forecast-income">+{money(forecast.summary.total_income, forecast.currency)}</strong></div>
-                <div><span>Planned payments</span><strong className="forecast-expense">−{money(forecast.summary.total_expense, forecast.currency)}</strong></div>
-                <div><span>Projected balance</span><strong>{money(forecast.summary.ending_balance, forecast.currency)}</strong></div>
+                <div><span>Planned income · {forecastWindow.label}</span><strong className="forecast-income">+{money(forecastWindow.totalIncome, forecast.currency)}</strong></div>
+                <div><span>Planned payments · {forecastWindow.label}</span><strong className="forecast-expense">−{money(forecastWindow.totalExpense, forecast.currency)}</strong></div>
+                <div><span>Projected cash · {forecastWindow.label}</span><strong>{money(forecastWindow.endingBalance, forecast.currency)}</strong></div>
               </div>
 
               <div className="forecast-table-wrap">
@@ -538,7 +593,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                     <tr className="forecast-start-row">
                       <td data-label="Date">Now</td><td data-label="Transaction">Current {forecast.account_name}</td><td data-label="Amount">—</td><td data-label="Projected balance">{money(forecast.starting_balance, forecast.currency)}</td><td data-label="Status">Snapshot</td>
                     </tr>
-                    {forecast.items.map((item) => (
+                    {forecastWindow.items.map((item) => (
                       <tr className={`${item.kind} ${item.resolution_status}`} key={item._id}>
                         <td data-label="Date">{forecastDateLabel(item.date_start, item.date_end)}</td>
                         <td data-label="Transaction"><strong>{item.label}</strong>{item.is_group && <small>Combined payment</small>}</td>
@@ -555,6 +610,9 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                         </td>
                       </tr>
                     ))}
+                    {!forecastWindow.items.length && (
+                      <tr><td className="forecast-window-empty" colSpan="5">No planned items fall within this time window.</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>

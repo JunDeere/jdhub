@@ -5342,6 +5342,58 @@ h3 {
   padding: 11px 12px;
 }
 
+.forecast-range-control {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  padding: 7px 8px 7px 12px;
+}
+
+.forecast-range-control > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.forecast-range-control > div {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.forecast-range-control button {
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.forecast-range-control button:hover {
+  color: var(--text);
+}
+
+.forecast-range-control button.active {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--primary-strong);
+  box-shadow: var(--shadow);
+}
+
+.forecast-window-empty {
+  height: 130px;
+  color: var(--muted) !important;
+  text-align: center !important;
+}
+
 .forecast-resolver-summary > div {
   display: grid;
   gap: 2px;
@@ -7466,6 +7518,16 @@ h3 {
 
   .finance-flow-guide > div:first-child {
     border-top: 0;
+  }
+
+  .forecast-range-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .forecast-range-control > div {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(76px, 1fr));
   }
 
   .financing-heading {

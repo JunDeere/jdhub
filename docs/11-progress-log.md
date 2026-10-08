@@ -42,6 +42,8 @@ more useful dashboard and restored the missing relationship between them.
   loan/installment accounts directly in Finance.
 - Reframed the interface around actual transactions, future cash flow, and
   outstanding debt, with an in-product explanation of how they interact.
+- Added forecast horizons for one week, one month, three months, one year, or
+  all entries, with one month as the default and recalculated window totals.
 - Added backend tests for financing payment balance behavior.
 
 ### Verification
