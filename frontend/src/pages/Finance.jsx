@@ -23,6 +23,7 @@ const emptyForm = {
   date: toUtcDateInput(new Date()),
   merchant_or_source: '',
   payment_method: 'Cash',
+  financing_item_id: '',
   note: '',
   tags: '',
 };
@@ -105,6 +106,23 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
       return matchesSearch && matchesProvider && matchesDueDay;
     });
   }, [forecast, financingDueDay, financingProvider, financingSearch]);
+
+  const financingSnapshot = useMemo(() => {
+    const records = forecast?.financing || [];
+    const knownBalances = records.filter((item) => Number.isFinite(Number(item.remaining_balance)));
+    const knownPayments = records.filter((item) => Number.isFinite(Number(item.estimated_monthly)));
+
+    return {
+      outstanding: knownBalances.reduce((total, item) => total + Number(item.remaining_balance), 0),
+      monthlyCommitment: knownPayments.reduce((total, item) => total + Number(item.estimated_monthly), 0),
+      knownBalanceCount: knownBalances.length,
+      knownPaymentCount: knownPayments.length,
+    };
+  }, [forecast]);
+
+  const financingById = useMemo(() => new Map(
+    (forecast?.financing || []).map((item) => [String(item._id), item]),
+  ), [forecast]);
 
   const loadTransactions = async () => {
     setLoading(true);
@@ -219,6 +237,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
       date: transaction.date ? toUtcDateInput(transaction.date) : emptyForm.date,
       merchant_or_source: transaction.merchant_or_source || '',
       payment_method: transaction.payment_method || 'Cash',
+      financing_item_id: transaction.financing_item_id || '',
       note: transaction.note || '',
       tags: (transaction.tags || []).join(', '),
     });
@@ -258,6 +277,36 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
           </button>
         ))}
       </div>
+
+      {forecast && (
+        <section aria-label="Finance dashboard summary" className="finance-dashboard-strip">
+          <div className="finance-dashboard-card primary">
+            <span>Current cash</span>
+            <strong>{money(forecast.starting_balance, forecast.currency)}</strong>
+            <small>Snapshot {formatLocalDate(forecast.as_of_date)}</small>
+          </div>
+          <div className="finance-dashboard-card expense">
+            <span>Planned payments</span>
+            <strong>{money(forecast.summary.total_expense, forecast.currency)}</strong>
+            <small>Across this forecast</small>
+          </div>
+          <div className="finance-dashboard-card">
+            <span>Outstanding financing</span>
+            <strong>{money(financingSnapshot.outstanding, forecast.currency)}</strong>
+            <small>{financingSnapshot.knownBalanceCount} of {forecast.financing?.length || 0} balances supplied</small>
+          </div>
+          <div className="finance-dashboard-card">
+            <span>Monthly installments</span>
+            <strong>{money(financingSnapshot.monthlyCommitment, forecast.currency)}</strong>
+            <small>{financingSnapshot.knownPaymentCount} known payment amounts</small>
+          </div>
+          <div className="finance-dashboard-card projected">
+            <span>Projected cash</span>
+            <strong>{money(forecast.summary.ending_balance, forecast.currency)}</strong>
+            <small>After planned cash flow</small>
+          </div>
+        </section>
+      )}
 
       {activeView === 'overview' && (
         <div aria-labelledby="finance-tab-overview" className="finance-view" id="finance-view-overview" role="tabpanel">
@@ -410,10 +459,18 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
 
       {activeView === 'financing' && (
         <section aria-labelledby="finance-tab-financing" className="panel financing-panel finance-view" id="finance-view-financing" role="tabpanel">
-          <div>
+          <div className="financing-heading">
+            <div>
             <p className="eyebrow">Financing</p>
             <h3>Loan and installment overview</h3>
             <p className="muted">Compare current balances, remaining payments, and due dates from the latest supplied forecast.</p>
+            </div>
+            {forecast?.financing?.length > 0 && (
+              <div className="financing-heading-summary">
+                <span>Total known debt</span>
+                <strong>{money(financingSnapshot.outstanding, forecast.currency)}</strong>
+              </div>
+            )}
           </div>
           {forecastLoading ? (
             <p className="muted">Loading financing records…</p>
@@ -583,6 +640,19 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                 ))}
               </select>
             </label>
+
+            {form.type === 'expense' && (
+              <label>
+                Apply to financing
+                <select value={form.financing_item_id} onChange={(event) => updateForm('financing_item_id', event.target.value)}>
+                  <option value="">Not a financing payment</option>
+                  {(forecast?.financing || []).map((item) => (
+                    <option key={item._id} value={item._id}>{item.name} · {item.provider || 'Financing'}</option>
+                  ))}
+                </select>
+                <small className="field-help">Linked payments reduce the balance and payments remaining.</small>
+              </label>
+            )}
           </div>
 
           <label>
@@ -638,6 +708,9 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                     </div>
 
                     <p>{formatLocalDate(transaction.date)} / {transaction.payment_method || 'No payment method'}</p>
+                    {transaction.financing_item_id && (
+                      <p className="transaction-financing-link">Financing: {financingById.get(String(transaction.financing_item_id))?.name || 'Linked account'}</p>
+                    )}
                     {transaction.note && <p>{transaction.note}</p>}
 
                     {transaction.tags?.length > 0 && (

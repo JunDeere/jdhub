@@ -22,6 +22,37 @@ New entries should go at the top of the journal section.
 
 ---
 
+## 2026-10-08 - Finance Dashboard and Linked Financing Payments
+
+### What We Worked On
+
+We expanded Finance from separate transaction and financing displays into a
+more useful dashboard and restored the missing relationship between them.
+
+### What We Finished
+
+- Added an always-visible finance summary for current cash, planned payments,
+  known financing balances, monthly installments, and projected cash.
+- Expanded the desktop financing workspace while retaining mobile cards.
+- Added an optional financing account to expense transactions.
+- Linked payments now reduce the selected financing balance and payments-left
+  count; editing a payment reverses and reapplies the correct adjustment.
+- Displayed the linked financing account in transaction history.
+- Added backend tests for financing payment balance behavior.
+
+### Verification
+
+- All backend tests passed.
+- Frontend lint and production build passed.
+- Git whitespace validation passed.
+
+### Possible Next Steps
+
+- Add transaction deletion with the same financing rollback behavior.
+- Add a dedicated financing payment history and reconciliation view.
+
+---
+
 ## 2026-10-05 - Anonymous Share Route Repaired
 
 ### What We Worked On

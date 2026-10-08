@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const authMiddleware = require('../middleware/auth');
+const { moveFinancingPayment } = require('../services/financingPayments');
 const { nowUtc, parseOptionalUtcDate, utcMonthRange } = require('../utils/dateTime');
 
 const router = express.Router();
@@ -22,6 +23,15 @@ function normalizeTags(tags) {
 
 function transactionPayload(body) {
   const amount = Number(body.amount);
+  const financingItemId = body.type === 'expense' && body.financing_item_id
+    ? String(body.financing_item_id)
+    : null;
+
+  if (financingItemId && !mongoose.isValidObjectId(financingItemId)) {
+    const error = new Error('Invalid financing account');
+    error.status = 400;
+    throw error;
+  }
 
   return {
     type: validTypes.includes(body.type) ? body.type : 'expense',
@@ -32,6 +42,7 @@ function transactionPayload(body) {
     merchant_or_source: typeof body.merchant_or_source === 'string' ? body.merchant_or_source.trim() : '',
     payment_method: typeof body.payment_method === 'string' ? body.payment_method.trim() : '',
     note: typeof body.note === 'string' ? body.note.trim() : '',
+    financing_item_id: financingItemId,
     is_recurring: Boolean(body.is_recurring),
     tags: normalizeTags(body.tags),
   };
@@ -83,39 +94,60 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
+  let transaction;
   try {
     const payload = transactionPayload(req.body);
     if (payload.amount <= 0) return res.status(400).json({ error: 'Amount must be greater than zero' });
 
-    const transaction = await Transaction.create({
+    transaction = await Transaction.create({
       ...payload,
       user_id: req.userId,
     });
+    await moveFinancingPayment(req.userId, null, payload.financing_item_id ? {
+      financingItemId: payload.financing_item_id,
+      amount: payload.amount,
+    } : null);
     const summary = await getMonthlySummary(req.userId, payload.date);
 
     res.status(201).json({ transaction, summary });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (transaction) await Transaction.deleteOne({ _id: transaction._id }).catch(() => {});
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
 router.patch('/:id', async (req, res) => {
+  let previousPayment = null;
+  let nextPayment = null;
+  let financingAdjusted = false;
   try {
     const payload = transactionPayload(req.body);
     if (payload.amount <= 0) return res.status(400).json({ error: 'Amount must be greater than zero' });
 
-    const transaction = await Transaction.findOneAndUpdate(
-      { _id: req.params.id, user_id: req.userId },
-      payload,
-      { returnDocument: 'after' },
-    );
-
+    const transaction = await Transaction.findOne({ _id: req.params.id, user_id: req.userId });
     if (!transaction) return res.status(404).json({ error: 'Transaction not found' });
+
+    previousPayment = transaction.type === 'expense' && transaction.financing_item_id ? {
+      financingItemId: transaction.financing_item_id,
+      amount: transaction.amount,
+    } : null;
+    nextPayment = payload.financing_item_id ? {
+      financingItemId: payload.financing_item_id,
+      amount: payload.amount,
+    } : null;
+    await moveFinancingPayment(req.userId, previousPayment, nextPayment);
+    financingAdjusted = Boolean(previousPayment || nextPayment);
+
+    Object.assign(transaction, payload);
+    await transaction.save();
 
     const summary = await getMonthlySummary(req.userId, payload.date);
     res.json({ transaction, summary });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    if (financingAdjusted) {
+      await moveFinancingPayment(req.userId, nextPayment, previousPayment).catch(() => {});
+    }
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 
