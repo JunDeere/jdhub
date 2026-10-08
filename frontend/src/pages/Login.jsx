@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { login, register, verifyEmailLogin } from "../api/auth.js";
 
 export default function Login({ onLogin }) {
@@ -13,6 +13,7 @@ export default function Login({ onLogin }) {
   const [challenge, setChallenge] = useState(null);
   const [code, setCode] = useState("");
   const [trustBrowser, setTrustBrowser] = useState(true);
+  const automaticDemoStarted = useRef(false);
 
   const isRegistering = mode === "register";
 
@@ -67,6 +68,26 @@ export default function Login({ onLogin }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (automaticDemoStarted.current) return;
+    const requested = new URLSearchParams(window.location.search).get("portfolioDemo") === "1";
+    if (!requested) return;
+    automaticDemoStarted.current = true;
+    const timer = window.setTimeout(async () => {
+      setError(null);
+      setLoading(true);
+      try {
+        const data = await login({ email: "demo@demo.com", password: "demo" });
+        onLogin(data.token, data.user);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [onLogin]);
 
   const toggleMode = () => {
     setMode(isRegistering ? "login" : "register");
