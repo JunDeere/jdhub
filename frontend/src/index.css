@@ -260,6 +260,27 @@ h3 {
   border: 1px solid color-mix(in srgb, #ef4444 45%, transparent);
   border-radius: 10px;
 }
+
+.auth-demo-entry {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.auth-demo-entry span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-demo-entry small {
+  color: var(--muted);
+  line-height: 1.45;
+}
 .security-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

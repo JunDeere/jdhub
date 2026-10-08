@@ -55,6 +55,19 @@ export default function Login({ onLogin }) {
     }
   };
 
+  const handleDemoLogin = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await login({ email: "demo@demo.com", password: "demo" });
+      onLogin(data.token, data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const toggleMode = () => {
     setMode(isRegistering ? "login" : "register");
     setError(null);
@@ -152,6 +165,16 @@ export default function Login({ onLogin }) {
               ? "Create account"
               : "Sign in"}
         </button>
+
+        {!isRegistering && (
+          <div className="auth-demo-entry">
+            <span>Public portfolio demo</span>
+            <button disabled={loading} onClick={handleDemoLogin} type="button">
+              {loading ? "Opening demo…" : "Enter fictional demo"}
+            </button>
+            <small>Resets isolated sample data on every login. Private JDHub records are never used.</small>
+          </div>
+        )}
 
         {registrationAllowed && (
           <button type="button" onClick={toggleMode}>
