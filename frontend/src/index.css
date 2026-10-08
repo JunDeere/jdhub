@@ -5389,6 +5389,119 @@ h3 {
   text-align: right;
 }
 
+.financing-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.financing-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.financing-table th,
+.financing-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 11px 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.financing-table th {
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.financing-table td {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.financing-table td:first-child {
+  min-width: 160px;
+}
+
+.financing-table td:first-child strong,
+.financing-table td:first-child small {
+  display: block;
+}
+
+.financing-table td:first-child small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.financing-table td:nth-child(2),
+.financing-table td:nth-child(3),
+.financing-table td:nth-child(4),
+.financing-table td:nth-child(5) {
+  white-space: nowrap;
+}
+
+.financing-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.financing-notes {
+  min-width: 260px;
+  color: var(--muted) !important;
+  font-size: 12px !important;
+  line-height: 1.45;
+}
+
+.financing-mobile {
+  display: none;
+}
+
+.financing-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, 200px) minmax(150px, 190px) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.financing-toolbar label {
+  min-width: 0;
+}
+
+.financing-toolbar input,
+.financing-toolbar select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.financing-toolbar input:focus,
+.financing-toolbar select:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.financing-result-count {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.financing-filter-empty {
+  justify-items: start;
+}
+
+.financing-filter-empty .secondary-button {
+  width: auto;
+}
+
 .entry-form,
 .task-form,
 .finance-form,
@@ -7984,6 +8097,23 @@ h3 {
 }
 
 @media (max-width: 760px) {
+  .financing-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .financing-search,
+  .financing-result-count {
+    grid-column: 1 / -1;
+  }
+
+  .financing-desktop {
+    display: none;
+  }
+
+  .financing-mobile {
+    display: grid;
+  }
+
   .diary-toolbar {
     align-items: stretch;
     flex-direction: column;

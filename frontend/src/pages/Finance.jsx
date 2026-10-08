@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getFinanceForecast, updateForecastItemStatus } from '../api/financeForecasts.js';
 import { createTransaction, getTransactions, updateTransaction } from '../api/transactions.js';
 import StatusToast from '../components/StatusToast.jsx';
@@ -76,6 +76,35 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [forecastError, setForecastError] = useState(null);
   const [updatingForecastItem, setUpdatingForecastItem] = useState(null);
   const [activeView, setActiveView] = useState('overview');
+  const [financingSearch, setFinancingSearch] = useState('');
+  const [financingProvider, setFinancingProvider] = useState('all');
+  const [financingDueDay, setFinancingDueDay] = useState('all');
+
+  const financingProviders = useMemo(() => (
+    [...new Set((forecast?.financing || []).map((item) => item.provider || 'Financing'))]
+      .sort((left, right) => left.localeCompare(right))
+  ), [forecast]);
+
+  const financingDueDays = useMemo(() => (
+    [...new Set((forecast?.financing || []).map((item) => item.due_day).filter(Boolean))]
+      .sort((left, right) => left - right)
+  ), [forecast]);
+
+  const filteredFinancing = useMemo(() => {
+    const query = financingSearch.trim().toLowerCase();
+
+    return (forecast?.financing || []).filter((item) => {
+      const provider = item.provider || 'Financing';
+      const matchesSearch = !query || [item.name, provider, item.notes]
+        .some((value) => value?.toLowerCase().includes(query));
+      const matchesProvider = financingProvider === 'all' || provider === financingProvider;
+      const matchesDueDay = financingDueDay === 'all'
+        || (financingDueDay === 'variable' && !item.due_day)
+        || String(item.due_day) === financingDueDay;
+
+      return matchesSearch && matchesProvider && matchesDueDay;
+    });
+  }, [forecast, financingDueDay, financingProvider, financingSearch]);
 
   const loadTransactions = async () => {
     setLoading(true);
@@ -384,7 +413,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
           <div>
             <p className="eyebrow">Financing</p>
             <h3>Loan and installment overview</h3>
-            <p className="muted">Balances are based on the supplied September 2026 statements.</p>
+            <p className="muted">Compare current balances, remaining payments, and due dates from the latest supplied forecast.</p>
           </div>
           {forecastLoading ? (
             <p className="muted">Loading financing records…</p>
@@ -393,20 +422,85 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
           ) : !forecast?.financing?.length ? (
             <div className="finance-empty-state"><strong>No financing records</strong><p className="muted">Loan and installment details will appear here when they are added to the forecast.</p></div>
           ) : (
-            <div className="financing-grid">
-              {forecast.financing.map((item) => (
-                <article key={item._id}>
-                  <div><strong>{item.name}</strong><span>{item.provider || 'Financing'}</span></div>
-                  <dl>
-                    <div><dt>Remaining</dt><dd>{item.remaining_balance == null ? 'Not provided' : money(item.remaining_balance, forecast.currency)}</dd></div>
-                    <div><dt>Payments left</dt><dd>{item.installments_remaining == null ? 'Variable' : item.installments_remaining}</dd></div>
-                    <div><dt>Expected payment</dt><dd>{item.estimated_monthly == null ? 'Variable' : money(item.estimated_monthly, forecast.currency)}</dd></div>
-                    <div><dt>Due</dt><dd>{item.due_day ? `Day ${item.due_day}` : 'Varies'}</dd></div>
-                  </dl>
-                  {item.notes && <p>{item.notes}</p>}
-                </article>
-              ))}
-            </div>
+            <>
+              <div className="financing-toolbar">
+                <label className="financing-search">
+                  <span className="sr-only">Search financing</span>
+                  <input
+                    onChange={(event) => setFinancingSearch(event.target.value)}
+                    placeholder="Search financing, provider, or notes…"
+                    type="search"
+                    value={financingSearch}
+                  />
+                </label>
+                <label>
+                  <span className="sr-only">Filter by provider</span>
+                  <select onChange={(event) => setFinancingProvider(event.target.value)} value={financingProvider}>
+                    <option value="all">All providers</option>
+                    {financingProviders.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span className="sr-only">Filter by due day</span>
+                  <select onChange={(event) => setFinancingDueDay(event.target.value)} value={financingDueDay}>
+                    <option value="all">All due dates</option>
+                    {financingDueDays.map((day) => <option key={day} value={day}>Due day {day}</option>)}
+                    <option value="variable">Variable due date</option>
+                  </select>
+                </label>
+                <span className="financing-result-count">{filteredFinancing.length} of {forecast.financing.length}</span>
+              </div>
+
+              {!filteredFinancing.length ? (
+                <div className="finance-empty-state financing-filter-empty">
+                  <strong>No matching financing records</strong>
+                  <p className="muted">Try a different search term or filter.</p>
+                  <button className="secondary-button" onClick={() => { setFinancingSearch(''); setFinancingProvider('all'); setFinancingDueDay('all'); }} type="button">Clear filters</button>
+                </div>
+              ) : <>
+              <div className="financing-table-wrap financing-desktop">
+                <table className="financing-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Financing</th>
+                      <th scope="col">Remaining</th>
+                      <th scope="col">Payments left</th>
+                      <th scope="col">Expected payment</th>
+                      <th scope="col">Due</th>
+                      <th scope="col">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredFinancing.map((item) => (
+                      <tr key={item._id}>
+                        <td><strong>{item.name}</strong><small>{item.provider || 'Financing'}</small></td>
+                        <td>{item.remaining_balance == null ? 'Not provided' : money(item.remaining_balance, forecast.currency)}</td>
+                        <td>{item.installments_remaining == null ? 'Variable' : item.installments_remaining}</td>
+                        <td>{item.estimated_monthly == null ? 'Variable' : money(item.estimated_monthly, forecast.currency)}</td>
+                        <td>{item.due_day ? `Day ${item.due_day}` : 'Varies'}</td>
+                        <td className="financing-notes">{item.notes || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="financing-grid financing-mobile">
+                {filteredFinancing.map((item) => (
+                  <article key={item._id}>
+                    <div><strong>{item.name}</strong><span>{item.provider || 'Financing'}</span></div>
+                    <dl>
+                      <div><dt>Remaining</dt><dd>{item.remaining_balance == null ? 'Not provided' : money(item.remaining_balance, forecast.currency)}</dd></div>
+                      <div><dt>Payments left</dt><dd>{item.installments_remaining == null ? 'Variable' : item.installments_remaining}</dd></div>
+                      <div><dt>Expected payment</dt><dd>{item.estimated_monthly == null ? 'Variable' : money(item.estimated_monthly, forecast.currency)}</dd></div>
+                      <div><dt>Due</dt><dd>{item.due_day ? `Day ${item.due_day}` : 'Varies'}</dd></div>
+                    </dl>
+                    {item.notes && <p>{item.notes}</p>}
+                  </article>
+                ))}
+              </div>
+              </>}
+            </>
           )}
         </section>
       )}
