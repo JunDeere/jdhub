@@ -507,12 +507,12 @@ function PrivateApp() {
     localStorage.setItem(SIDEBAR_KEY, String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
-  const handleLogin = (newToken, loggedInUser) => {
+  const handleLogin = useCallback((newToken, loggedInUser) => {
     localStorage.setItem(STORAGE_KEY, newToken);
     setCheckingSession(true);
     setUser(loggedInUser);
     setToken(newToken);
-  };
+  }, []);
 
   const handleLogout = () => {
     portfolioStopRef.current();
