@@ -21,6 +21,8 @@ function createTransport() {
     port: Number(process.env.SMTP_PORT?.trim() || 587),
     secure: process.env.SMTP_SECURE?.trim().toLowerCase() === 'true',
     auth: { user, pass },
+    disableFileAccess: true,
+    disableUrlAccess: true,
   });
 }
 
@@ -35,6 +37,8 @@ async function sendLoginCode({ email, code, ip, userAgent }) {
     from,
     to: email,
     subject: 'Your JDHub sign-in code',
+    disableFileAccess: true,
+    disableUrlAccess: true,
     text: [
       `Your JDHub sign-in code is ${code}.`,
       '',
