@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getFinanceForecast, updateForecastItemStatus } from '../api/financeForecasts.js';
+import {
+  getFinanceForecast,
+  saveFinancingItem,
+  saveForecast,
+  saveForecastItem,
+  updateForecastItemStatus,
+} from '../api/financeForecasts.js';
 import { createTransaction, getTransactions, updateTransaction } from '../api/transactions.js';
 import StatusToast from '../components/StatusToast.jsx';
 import { dateInputToUtcIso, formatLocalDate, toUtcDateInput } from '../utils/dateTime.js';
@@ -11,7 +17,7 @@ const paymentMethods = ['Cash', 'GCash', 'Maya', 'Debit Card', 'Credit Card', 'B
 const financeViews = [
   { id: 'overview', label: 'Overview' },
   { id: 'forecast', label: 'Forecast' },
-  { id: 'financing', label: 'Financing' },
+  { id: 'financing', label: 'Loans & installments' },
   { id: 'transactions', label: 'Transactions' },
 ];
 
@@ -80,6 +86,9 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [financingSearch, setFinancingSearch] = useState('');
   const [financingProvider, setFinancingProvider] = useState('all');
   const [financingDueDay, setFinancingDueDay] = useState('all');
+  const [financeEditor, setFinanceEditor] = useState(null);
+  const [editorSaving, setEditorSaving] = useState(false);
+  const [editorError, setEditorError] = useState(null);
 
   const financingProviders = useMemo(() => (
     [...new Set((forecast?.financing || []).map((item) => item.provider || 'Financing'))]
@@ -259,6 +268,89 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
     }
   };
 
+  const openForecastEditor = () => {
+    setEditorError(null);
+    setFinanceEditor({
+      type: 'forecast',
+      id: forecast?._id || null,
+      values: {
+        name: forecast?.name || 'Personal cash-flow forecast',
+        account_name: forecast?.account_name || 'Available cash',
+        currency: forecast?.currency || 'PHP',
+        as_of_date: forecast?.as_of_date ? toUtcDateInput(forecast.as_of_date) : toUtcDateInput(new Date()),
+        starting_balance: forecast?.starting_balance ?? '',
+      },
+    });
+  };
+
+  const openForecastItemEditor = (item = null) => {
+    setEditorError(null);
+    setFinanceEditor({
+      type: 'forecast-item',
+      id: item?._id || null,
+      values: {
+        label: item?.label || '',
+        kind: item?.kind || 'expense',
+        amount: item?.amount ?? '',
+        date_start: item?.date_start ? toUtcDateInput(item.date_start) : toUtcDateInput(new Date()),
+        date_end: item?.date_end ? toUtcDateInput(item.date_end) : '',
+        category: item?.category || '',
+        notes: item?.notes || '',
+        is_group: Boolean(item?.is_group),
+        status: item?.status || 'planned',
+      },
+    });
+  };
+
+  const openFinancingEditor = (item = null) => {
+    setEditorError(null);
+    setFinanceEditor({
+      type: 'financing',
+      id: item?._id || null,
+      values: {
+        name: item?.name || '',
+        provider: item?.provider || '',
+        remaining_balance: item?.remaining_balance ?? '',
+        installments_remaining: item?.installments_remaining ?? '',
+        estimated_monthly: item?.estimated_monthly ?? '',
+        due_day: item?.due_day ?? '',
+        notes: item?.notes || '',
+      },
+    });
+  };
+
+  const updateEditor = (field, value) => {
+    setFinanceEditor((current) => ({
+      ...current,
+      values: { ...current.values, [field]: value },
+    }));
+    setEditorError(null);
+  };
+
+  const handleEditorSubmit = async (event) => {
+    event.preventDefault();
+    if (!financeEditor) return;
+    setEditorSaving(true);
+    setEditorError(null);
+    try {
+      let data;
+      if (financeEditor.type === 'forecast') {
+        data = await saveForecast(token, financeEditor.values, financeEditor.id);
+      } else if (financeEditor.type === 'forecast-item') {
+        data = await saveForecastItem(token, forecast._id, financeEditor.values, financeEditor.id);
+      } else {
+        data = await saveFinancingItem(token, forecast._id, financeEditor.values, financeEditor.id);
+      }
+      setForecast(data.forecast);
+      setFinanceEditor(null);
+      setStatusMessage(financeEditor.id ? 'Finance data updated.' : 'Finance data added.');
+    } catch (err) {
+      setEditorError(err.message);
+    } finally {
+      setEditorSaving(false);
+    }
+  };
+
   return (
     <section className="finance-page">
       <div className="finance-view-tabs" role="tablist" aria-label="Finance views">
@@ -324,6 +416,13 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
               <strong>{money(summary?.net)}</strong>
             </div>
           </div>
+
+          <section className="finance-flow-guide" aria-label="How finance tracking works">
+            <div><span>1</span><p><strong>Record reality</strong><small>Transactions are money that actually moved.</small></p></div>
+            <div><span>2</span><p><strong>Plan ahead</strong><small>Forecast lists income and bills you expect later.</small></p></div>
+            <div><span>3</span><p><strong>Track debt</strong><small>Loans and installments show what you still owe.</small></p></div>
+            <div><span>4</span><p><strong>Link payments</strong><small>A linked expense lowers both cash and debt.</small></p></div>
+          </section>
 
           <div className="finance-overview-grid">
             <section className="panel finance-overview-card">
@@ -398,7 +497,13 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
               <h3>{forecast?.name || 'Cash-flow Forecast'}</h3>
               {forecast && <p className="muted">{forecast.account_name} snapshot from {formatLocalDate(forecast.as_of_date)}. Forecast entries do not affect actual transaction totals.</p>}
             </div>
-                {forecast && <span className="status-pill">Ends at {money(forecast.summary.ending_balance, forecast.currency)}</span>}
+                {forecast && (
+                  <div className="finance-heading-actions">
+                    <span className="status-pill">Ends at {money(forecast.summary.ending_balance, forecast.currency)}</span>
+                    <button className="secondary-button" onClick={openForecastEditor} type="button">Edit current cash</button>
+                    <button className="primary-button" onClick={() => openForecastItemEditor()} type="button">Add planned item</button>
+                  </div>
+                )}
               </div>
 
           {forecastLoading ? (
@@ -406,7 +511,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
           ) : forecastError ? (
             <div className="alert-error">{forecastError}</div>
           ) : !forecast ? (
-            <div className="finance-empty-state"><strong>No forecast yet</strong><p className="muted">Add a cash-flow forecast to see upcoming income, payments, and projected balances.</p></div>
+            <div className="finance-empty-state"><strong>No forecast yet</strong><p className="muted">Start with the cash you have today, then add expected income and bills.</p><button className="primary-button" onClick={openForecastEditor} type="button">Create forecast</button></div>
           ) : (
             <>
               <div className="forecast-resolver-summary" role="status">
@@ -428,7 +533,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
 
               <div className="forecast-table-wrap">
                 <table className="forecast-table">
-                  <thead><tr><th>Date</th><th>Transaction</th><th>Amount</th><th>Projected balance</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Date</th><th>Planned item</th><th>Amount</th><th>Projected cash</th><th>Status & action</th></tr></thead>
                   <tbody>
                     <tr className="forecast-start-row">
                       <td data-label="Date">Now</td><td data-label="Transaction">Current {forecast.account_name}</td><td data-label="Amount">—</td><td data-label="Projected balance">{money(forecast.starting_balance, forecast.currency)}</td><td data-label="Status">Snapshot</td>
@@ -446,6 +551,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                             <option value="completed">Completed</option>
                             <option value="skipped">Skipped</option>
                           </select>
+                          <button className="table-action-button" onClick={() => openForecastItemEditor(item)} type="button">Edit</button>
                         </td>
                       </tr>
                     ))}
@@ -461,14 +567,14 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
         <section aria-labelledby="finance-tab-financing" className="panel financing-panel finance-view" id="finance-view-financing" role="tabpanel">
           <div className="financing-heading">
             <div>
-            <p className="eyebrow">Financing</p>
-            <h3>Loan and installment overview</h3>
-            <p className="muted">Compare current balances, remaining payments, and due dates from the latest supplied forecast.</p>
+            <p className="eyebrow">Debt tracking</p>
+            <h3>Loans and installments</h3>
+            <p className="muted">Track money still owed on loans and pay-later plans. Link an expense transaction when you make a payment so its balance decreases.</p>
             </div>
-            {forecast?.financing?.length > 0 && (
-              <div className="financing-heading-summary">
-                <span>Total known debt</span>
-                <strong>{money(financingSnapshot.outstanding, forecast.currency)}</strong>
+            {forecast && (
+              <div className="financing-heading-actions">
+                {forecast.financing?.length > 0 && <div className="financing-heading-summary"><span>Total known debt</span><strong>{money(financingSnapshot.outstanding, forecast.currency)}</strong></div>}
+                <button className="primary-button" onClick={() => openFinancingEditor()} type="button">Add loan or installment</button>
               </div>
             )}
           </div>
@@ -525,6 +631,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                       <th scope="col">Expected payment</th>
                       <th scope="col">Due</th>
                       <th scope="col">Notes</th>
+                      <th scope="col">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -536,6 +643,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                         <td>{item.estimated_monthly == null ? 'Variable' : money(item.estimated_monthly, forecast.currency)}</td>
                         <td>{item.due_day ? `Day ${item.due_day}` : 'Varies'}</td>
                         <td className="financing-notes">{item.notes || '—'}</td>
+                        <td><button className="table-action-button" onClick={() => openFinancingEditor(item)} type="button">Edit</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -553,6 +661,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                       <div><dt>Due</dt><dd>{item.due_day ? `Day ${item.due_day}` : 'Varies'}</dd></div>
                     </dl>
                     {item.notes && <p>{item.notes}</p>}
+                    <button className="secondary-button" onClick={() => openFinancingEditor(item)} type="button">Edit financing</button>
                   </article>
                 ))}
               </div>
@@ -733,6 +842,79 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
           </div>
         </div>
       </div>
+      )}
+
+      {financeEditor && (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !editorSaving) setFinanceEditor(null); }}>
+          <form aria-labelledby="finance-editor-title" aria-modal="true" className="modal-card finance-editor-modal utility-form" noValidate onSubmit={handleEditorSubmit} role="dialog">
+            <div className="finance-editor-heading">
+              <div>
+                <p className="eyebrow">
+                  {financeEditor.type === 'forecast' ? 'Cash starting point' : financeEditor.type === 'forecast-item' ? 'Expected cash flow' : 'Debt account'}
+                </p>
+                <h3 id="finance-editor-title">
+                  {financeEditor.type === 'forecast'
+                    ? `${financeEditor.id ? 'Edit' : 'Create'} forecast`
+                    : financeEditor.type === 'forecast-item'
+                      ? `${financeEditor.id ? 'Edit' : 'Add'} planned item`
+                      : `${financeEditor.id ? 'Edit' : 'Add'} loan or installment`}
+                </h3>
+              </div>
+              <button aria-label="Close finance editor" className="icon-button" disabled={editorSaving} onClick={() => setFinanceEditor(null)} type="button">×</button>
+            </div>
+
+            {financeEditor.type === 'forecast' && (
+              <>
+                <p className="muted">Enter the cash you have on the snapshot date. Future planned items will be calculated from this amount.</p>
+                <div className="form-grid two">
+                  <label>Forecast name<input required value={financeEditor.values.name} onChange={(event) => updateEditor('name', event.target.value)} /></label>
+                  <label>Cash account name<input required value={financeEditor.values.account_name} onChange={(event) => updateEditor('account_name', event.target.value)} placeholder="Available cash" /></label>
+                  <label>Current cash<input min="0" required step="0.01" type="number" value={financeEditor.values.starting_balance} onChange={(event) => updateEditor('starting_balance', event.target.value)} /></label>
+                  <label>Snapshot date<input required type="date" value={financeEditor.values.as_of_date} onChange={(event) => updateEditor('as_of_date', event.target.value)} /></label>
+                  <label>Currency<input maxLength="3" required value={financeEditor.values.currency} onChange={(event) => updateEditor('currency', event.target.value.toUpperCase())} /></label>
+                </div>
+              </>
+            )}
+
+            {financeEditor.type === 'forecast-item' && (
+              <>
+                <p className="muted">Add money you expect to receive or pay. This changes projected cash, not the actual transaction ledger.</p>
+                <div className="form-grid two">
+                  <label>Item name<input required value={financeEditor.values.label} onChange={(event) => updateEditor('label', event.target.value)} placeholder="Salary, subscription, installment" /></label>
+                  <label>Type<select value={financeEditor.values.kind} onChange={(event) => updateEditor('kind', event.target.value)}><option value="income">Expected income</option><option value="expense">Expected payment</option></select></label>
+                  <label>Amount<input min="0.01" required step="0.01" type="number" value={financeEditor.values.amount} onChange={(event) => updateEditor('amount', event.target.value)} /></label>
+                  <label>Planned date<input required type="date" value={financeEditor.values.date_start} onChange={(event) => updateEditor('date_start', event.target.value)} /></label>
+                  <label>Optional end date<input type="date" value={financeEditor.values.date_end} onChange={(event) => updateEditor('date_end', event.target.value)} /></label>
+                  <label>Category<input value={financeEditor.values.category} onChange={(event) => updateEditor('category', event.target.value)} placeholder="Bills, salary, shopping" /></label>
+                  <label>Status<select value={financeEditor.values.status} onChange={(event) => updateEditor('status', event.target.value)}><option value="planned">Planned</option><option value="completed">Completed</option><option value="skipped">Skipped</option></select></label>
+                  <label className="checkbox-row"><input checked={financeEditor.values.is_group} onChange={(event) => updateEditor('is_group', event.target.checked)} type="checkbox" /> Combined payment</label>
+                </div>
+                <label>Notes<textarea rows={3} value={financeEditor.values.notes} onChange={(event) => updateEditor('notes', event.target.value)} /></label>
+              </>
+            )}
+
+            {financeEditor.type === 'financing' && (
+              <>
+                <p className="muted">Use this for a loan, credit installment, or pay-later balance—not an ordinary one-time bill.</p>
+                <div className="form-grid two">
+                  <label>Name<input required value={financeEditor.values.name} onChange={(event) => updateEditor('name', event.target.value)} placeholder="Laptop installment" /></label>
+                  <label>Provider<input value={financeEditor.values.provider} onChange={(event) => updateEditor('provider', event.target.value)} placeholder="Bank or service" /></label>
+                  <label>Remaining balance<input min="0" step="0.01" type="number" value={financeEditor.values.remaining_balance} onChange={(event) => updateEditor('remaining_balance', event.target.value)} /></label>
+                  <label>Payments left<input min="0" step="1" type="number" value={financeEditor.values.installments_remaining} onChange={(event) => updateEditor('installments_remaining', event.target.value)} /></label>
+                  <label>Expected payment<input min="0" step="0.01" type="number" value={financeEditor.values.estimated_monthly} onChange={(event) => updateEditor('estimated_monthly', event.target.value)} /></label>
+                  <label>Due day<input max="31" min="1" step="1" type="number" value={financeEditor.values.due_day} onChange={(event) => updateEditor('due_day', event.target.value)} placeholder="15" /></label>
+                </div>
+                <label>Notes<textarea rows={3} value={financeEditor.values.notes} onChange={(event) => updateEditor('notes', event.target.value)} /></label>
+              </>
+            )}
+
+            {editorError && <div className="alert-error">{editorError}</div>}
+            <div className="finance-editor-actions">
+              <button className="secondary-button" disabled={editorSaving} onClick={() => setFinanceEditor(null)} type="button">Cancel</button>
+              <button className="primary-button" disabled={editorSaving} type="submit">{editorSaving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </form>
+        </div>
       )}
       <StatusToast error={error} success={statusMessage} onDismiss={() => { setError(null); setStatusMessage(null); }} />
     </section>

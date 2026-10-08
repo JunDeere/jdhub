@@ -38,6 +38,10 @@ more useful dashboard and restored the missing relationship between them.
 - Linked payments now reduce the selected financing balance and payments-left
   count; editing a payment reverses and reapplies the correct adjustment.
 - Displayed the linked financing account in transaction history.
+- Added forms to create or edit the cash snapshot, planned forecast items, and
+  loan/installment accounts directly in Finance.
+- Reframed the interface around actual transactions, future cash flow, and
+  outstanding debt, with an in-product explanation of how they interact.
 - Added backend tests for financing payment balance behavior.
 
 ### Verification

@@ -24,3 +24,29 @@ export async function updateForecastItemStatus(token, forecastId, itemId, status
   });
   return parseJson(response);
 }
+
+async function sendForecastRequest(token, path, method, payload) {
+  const response = await fetch(`${API_BASE}/api/finance-forecasts${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return parseJson(response);
+}
+
+export function saveForecast(token, payload, forecastId) {
+  return sendForecastRequest(token, forecastId ? `/${forecastId}` : '', forecastId ? 'PATCH' : 'POST', payload);
+}
+
+export function saveForecastItem(token, forecastId, payload, itemId) {
+  const suffix = itemId ? `/${itemId}` : '';
+  return sendForecastRequest(token, `/${forecastId}/items${suffix}`, itemId ? 'PATCH' : 'POST', payload);
+}
+
+export function saveFinancingItem(token, forecastId, payload, itemId) {
+  const suffix = itemId ? `/${itemId}` : '';
+  return sendForecastRequest(token, `/${forecastId}/financing${suffix}`, itemId ? 'PATCH' : 'POST', payload);
+}
