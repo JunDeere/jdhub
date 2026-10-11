@@ -1,6 +1,6 @@
 const MODULES = Object.freeze({
   dashboard: { label: 'Home', context: ['tasks', 'schedule', 'projects', 'lifeLog', 'knowledge'], actions: ['update_task'] },
-  'command-center': { label: 'Command Center', context: ['tasks', 'schedule', 'projects', 'lifeLog', 'knowledge', 'finance'], actions: ['create_life_log', 'create_task', 'update_task', 'create_transaction'] },
+  'command-center': { label: 'Ask JDHub', context: ['tasks', 'schedule', 'projects', 'lifeLog', 'knowledge', 'finance'], actions: ['create_life_log', 'create_task', 'update_task', 'create_transaction'] },
   'life-log': { label: 'Notes', context: ['lifeLog'], actions: ['create_life_log'] },
   diary: { label: 'Diary', context: [], actions: [], privateReason: 'Diary stays inside the encrypted browser vault and is never sent to the assistant. Unlock and work with entries directly in Diary.' },
   tasks: { label: 'Tasks', context: ['tasks'], actions: ['create_task', 'update_task'] },

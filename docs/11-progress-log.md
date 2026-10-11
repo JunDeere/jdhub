@@ -22,6 +22,39 @@ New entries should go at the top of the journal section.
 
 ---
 
+## 2026-10-12 - Unified Ask JDHub Search and Actions
+
+### What We Worked On
+
+We replaced the separate search and command experiences with one Ask JDHub
+entry point.
+
+### What We Finished
+
+- Ask JDHub now retrieves relevant notes, knowledge pages, tasks, projects,
+  transactions, finance forecasts, schedules, and reminders before answering.
+- Search matches appear below assistant answers and open the matching module.
+- The top bar and the full assistant now share the same global context.
+- Existing note, task, task-update, and transaction actions remain protected by
+  editable confirmation previews.
+- Encrypted diary entries, files, credentials, administration, infrastructure,
+  integrations, and settings remain outside assistant retrieval.
+- Removed the separate search form and renamed the visible Command Center to
+  Ask JDHub.
+
+### Verification
+
+- Backend tests passed, including retrieval term extraction and ranking.
+- Frontend tests and lint passed.
+- Frontend production build passed.
+
+### Possible Next Steps
+
+- Add more confirmed action types after the unified search behavior is proven.
+- Improve record-level deep links within each destination module.
+
+---
+
 ## 2026-10-08 - Finance Dashboard and Linked Financing Payments
 
 ### What We Worked On

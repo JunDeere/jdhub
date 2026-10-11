@@ -7,33 +7,14 @@ import {
   getAssistantConversation,
   getCommandHistory,
 } from '../api/commands.js';
-import { globalSearch } from '../api/search.js';
 import { formatLocalDateTime } from '../utils/dateTime.js';
 
 const assistantExamples = [
-  'What needs my attention?',
-  'Summarize my open tasks',
+  'Find my notes about nginx',
+  'Which tasks mention backups?',
+  'Show my upcoming birthday schedules',
   'Remember that I fixed nginx today',
-  'Create a task to review server backups tomorrow',
 ];
-
-const moduleLabels = {
-  dashboard: 'Home',
-  'command-center': 'Command Center',
-  'life-log': 'Notes',
-  diary: 'Diary (private vault)',
-  tasks: 'Tasks',
-  scheduling: 'Scheduling',
-  finance: 'Finance',
-  projects: 'Projects',
-  'knowledge-base': 'Knowledge Base',
-  files: 'Files (private)',
-  security: 'Administration (private)',
-  'server-manager': 'Infrastructure (private)',
-  integrations: 'Integrations (private)',
-  'module-status': 'Module Status',
-  settings: 'Settings (private)',
-};
 
 function tagsToText(tags) {
   return Array.isArray(tags) ? tags.join(', ') : '';
@@ -62,13 +43,13 @@ function messageId() {
 
 const CommandCenter = forwardRef(function CommandCenter({
   token,
-  activeModule = 'command-center',
   mode = 'page',
   onClose,
   onCommandSaved,
   onExpand,
   onIntegrate,
   onMinimize,
+  onNavigate,
 }, ref) {
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState([{
@@ -81,14 +62,10 @@ const CommandCenter = forwardRef(function CommandCenter({
   const [previewEditing, setPreviewEditing] = useState(false);
   const [taskCheckIn, setTaskCheckIn] = useState(null);
   const [history, setHistory] = useState([]);
-  const [searchText, setSearchText] = useState('');
-  const [searchData, setSearchData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [error, setError] = useState(null);
-  const [searchError, setSearchError] = useState(null);
   const composerRef = useRef(null);
   const messagesRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
@@ -129,6 +106,7 @@ const CommandCenter = forwardRef(function CommandCenter({
               role: message.role,
               text: message.content,
               meta: message.model || '',
+              matches: message.search_results || [],
             })));
           }
           setTaskCheckIn(conversationData.task_check_in || null);
@@ -151,8 +129,8 @@ const CommandCenter = forwardRef(function CommandCenter({
     setHistory(data.messages);
   }, [token]);
 
-  const addMessage = useCallback((role, text, meta = '') => {
-    setMessages((current) => [...current, { id: messageId(), role, text, meta }]);
+  const addMessage = useCallback((role, text, meta = '', matches = []) => {
+    setMessages((current) => [...current, { id: messageId(), role, text, meta, matches }]);
   }, []);
 
   const runPrompt = useCallback(async (value) => {
@@ -166,17 +144,17 @@ const CommandCenter = forwardRef(function CommandCenter({
     addMessage('user', prompt);
 
     try {
-      const data = await askCommandAi(token, prompt, activeModule);
+      const data = await askCommandAi(token, prompt, 'command-center');
       if (data.kind === 'action_preview') {
         setTaskCheckIn(null);
         setPreview({ message: data.message, action: data.action });
         setPayload(data.action.payload);
         setPreviewEditing(false);
-        addMessage('assistant', data.answer, data.model);
+        addMessage('assistant', data.answer, data.model, data.search_results || []);
         await refreshHistory();
       } else {
         setTaskCheckIn(data.task_check_in || null);
-        addMessage('assistant', data.answer, data.model);
+        addMessage('assistant', data.answer, data.model, data.search_results || []);
       }
     } catch (err) {
       setError(err.message);
@@ -184,7 +162,7 @@ const CommandCenter = forwardRef(function CommandCenter({
     } finally {
       setWorking(false);
     }
-  }, [activeModule, addMessage, refreshHistory, token, working]);
+  }, [addMessage, refreshHistory, token, working]);
 
   useImperativeHandle(ref, () => ({
     focus() {
@@ -249,20 +227,6 @@ const CommandCenter = forwardRef(function CommandCenter({
       setError(err.message);
     } finally {
       setWorking(false);
-    }
-  };
-
-  const handleSearch = async (event) => {
-    event.preventDefault();
-    setSearching(true);
-    setSearchError(null);
-    try {
-      const data = await globalSearch(token, searchText);
-      setSearchData(data);
-    } catch (err) {
-      setSearchError(err.message);
-    } finally {
-      setSearching(false);
     }
   };
 
@@ -378,7 +342,7 @@ const CommandCenter = forwardRef(function CommandCenter({
       <div className="assistant-header">
         <div className="assistant-identity">
           <span><Bot aria-hidden="true" size={19} /></span>
-          <div><strong>JDHub Assistant</strong><small>Context: {moduleLabels[activeModule] || 'Command Center'}</small></div>
+          <div><strong>Ask JDHub</strong><small>Search and act across JDHub</small></div>
         </div>
         <div className="assistant-header-actions">
           {mode !== 'page' && <button aria-label="Show history" aria-pressed={historyOpen} onClick={() => setHistoryOpen((current) => !current)} title="History" type="button"><History size={17} /></button>}
@@ -405,8 +369,8 @@ const CommandCenter = forwardRef(function CommandCenter({
               ))}
             </section>
             <section>
-              <span className="entry-category">Recent commands</span>
-              {loading ? <p className="muted">Loading…</p> : history.length === 0 ? <p className="muted">No commands yet.</p> : history.slice(0, 12).map((message) => (
+              <span className="entry-category">Recent actions</span>
+              {loading ? <p className="muted">Loading…</p> : history.length === 0 ? <p className="muted">No actions yet.</p> : history.slice(0, 12).map((message) => (
                 <article key={`drawer-command-${message._id}`}>
                   <div><strong>{message.raw_text}</strong><span className="status-pill">{message.status}</span></div>
                   <small>{formatLocalDateTime(message.createdAt)}</small>
@@ -430,7 +394,20 @@ const CommandCenter = forwardRef(function CommandCenter({
         {messages.map((message) => (
           <article className={`assistant-message ${message.role}`} key={message.id}>
             <span>{message.role === 'assistant' ? 'JD' : 'You'}</span>
-            <div><p>{message.text}</p>{message.meta && <small>{message.meta}</small>}</div>
+            <div>
+              <p>{message.text}</p>
+              {message.matches?.length > 0 && (
+                <div className="assistant-result-list" aria-label="Matching JDHub records">
+                  {message.matches.map((match) => (
+                    <button key={`${match.type}-${match.id}`} onClick={() => onNavigate?.(match.page)} type="button">
+                      <Search aria-hidden="true" size={13} />
+                      <span><strong>{match.title}</strong><small>{match.meta || match.page}</small></span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {message.meta && <small>{message.meta}</small>}
+            </div>
           </article>
         ))}
         {working && <div className="assistant-thinking">JDHub is working…</div>}
@@ -483,7 +460,7 @@ const CommandCenter = forwardRef(function CommandCenter({
             event.preventDefault();
             event.currentTarget.form?.requestSubmit();
           }
-        }} placeholder="Ask JDHub or enter a command…" rows={2} />
+        }} placeholder="Ask JDHub to find something or take an action…" rows={2} />
         <button aria-label="Send" disabled={working || !draft.trim()} type="submit"><Send size={18} /></button>
       </form>
     </div>
@@ -502,18 +479,9 @@ const CommandCenter = forwardRef(function CommandCenter({
       <div className="assistant-page-layout">
         {chatPanel}
         <aside className="assistant-context-panel">
-          <div className="assistant-context-section">
-            <div className="assistant-context-heading"><Search size={17} /><strong>Search JDHub</strong></div>
-            <form className="assistant-search" onSubmit={handleSearch}>
-              <input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="Search records…" required />
-              <button className="secondary-button" disabled={searching} type="submit">{searching ? '…' : 'Search'}</button>
-            </form>
-            {searchError && <div className="alert-error">{searchError}</div>}
-            {searchData && <div className="assistant-search-summary"><strong>{searchData.summary.text}</strong>{Object.values(searchData.results).flat().slice(0, 5).map((item) => <button key={`${item.type}-${item.id}`} type="button"><span>{item.title}</span><small>{item.meta}</small></button>)}</div>}
-          </div>
           <div className="assistant-context-section assistant-history">
-            <div className="assistant-context-heading"><strong>Recent command history</strong></div>
-            {loading ? <p className="muted">Loading…</p> : history.length === 0 ? <p className="muted">No commands yet.</p> : history.slice(0, 12).map((message) => (
+            <div className="assistant-context-heading"><strong>Recent actions</strong></div>
+            {loading ? <p className="muted">Loading…</p> : history.length === 0 ? <p className="muted">No actions yet.</p> : history.slice(0, 12).map((message) => (
               <article key={message._id}>
                 <div><strong>{message.raw_text}</strong><span className="status-pill">{message.status}</span></div>
                 <small>{formatLocalDateTime(message.createdAt)}</small>

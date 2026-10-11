@@ -4,7 +4,7 @@ Current development version: **0.2.0-beta.1**
 
 JDHub is a private personal command center built to connect notes, tasks,
 scheduling, finance, projects, files, infrastructure records, integrations, and
-an AI-assisted command interface into one system.
+an AI-assisted search and action interface into one system.
 
 The goal is to build the core first, then flesh out each module over time.
 
@@ -22,10 +22,11 @@ The goal is to build the core first, then flesh out each module over time.
 ```text
 Dashboard
 
-Command Center
-- Chat
-- Command History
-- Saved Outputs
+Ask JDHub
+- Natural-language search across safe JDHub modules
+- Linked search results inside assistant answers
+- Confirmed actions for notes, tasks, and transactions
+- Action history
 
 Personal
 - Notes

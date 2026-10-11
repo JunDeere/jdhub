@@ -48,3 +48,12 @@ test('mock provider creates deterministic module-bounded read answers', () => {
   );
   assert.equal(answer, 'Tasks: 1 open task. Highest priority: "Fictional review" (high).');
 });
+
+test('mock provider reports retrieved unified search matches', () => {
+  const answer = _test.buildMockAnswer(
+    'Find the fictional backup task',
+    { searchResults: [{ title: 'Fictional backup', page: 'tasks' }] },
+    { label: 'Ask JDHub', moduleId: 'command-center' },
+  );
+  assert.equal(answer, 'Ask JDHub: I found 1 relevant record. The closest match is “Fictional backup” in tasks.');
+});

@@ -79,7 +79,7 @@ const navGroups = [
     label: 'Core',
     items: [
       { id: 'dashboard', label: 'Home' },
-      { id: 'command-center', label: 'Command Center' },
+      { id: 'command-center', label: 'Ask JDHub' },
     ],
   },
   {
@@ -120,10 +120,10 @@ const navGroups = [
 
 const pageDetails = {
   'command-center': {
-    title: 'Command Center',
-    eyebrow: 'Rule-based command layer',
-    description: 'This will become the main place to add notes, create tasks, log expenses, search records, and review command history. The docs say this stays rule-based first, with previews before saving.',
-    next: ['Add command message collection', 'Build prefix parser', 'Show action preview before writes'],
+    title: 'Ask JDHub',
+    eyebrow: 'Unified search and actions',
+    description: 'Ask naturally to find records across JDHub or prepare a safe action for confirmation.',
+    next: ['Search safe modules', 'Answer from matching records', 'Confirm before every write'],
   },
   'life-log': {
     title: 'Notes',
@@ -867,9 +867,9 @@ function PrivateApp() {
               <form className="command-preview assistant-topbar-entry" onSubmit={handleTopbarAssistantSubmit}>
                 <Bot aria-hidden="true" size={17} />
                 <input
-                  aria-label="Ask JDHub or enter a command"
+                  aria-label="Ask JDHub"
                   onChange={(event) => setTopbarPrompt(event.target.value)}
-                  placeholder="Ask JDHub or enter a command…"
+                  placeholder="Ask JDHub to find something or take an action…"
                   value={topbarPrompt}
                 />
                 <button aria-label="Send to JDHub Assistant" type="submit"><Send size={16} /></button>
@@ -952,13 +952,13 @@ function PrivateApp() {
               ].filter(Boolean).join(' ')} style={{ '--assistant-width': `${assistantWidth}px` }}>
                 <CommandCenter
                   ref={assistantRef}
-                  activeModule={activePage}
                   mode={activePage === 'command-center' ? 'page' : assistantMode === 'integrated' ? 'integrated' : assistantMode === 'floating' ? 'floating' : 'minimized'}
                   onClose={() => setAssistantMode('closed')}
                   onCommandSaved={handleAssistantDataChanged}
                   onExpand={() => setAssistantMode('floating')}
                   onIntegrate={() => setAssistantMode('integrated')}
                   onMinimize={() => setAssistantMode('floating')}
+                  onNavigate={navigateToPage}
                   token={token}
                 />
                 {activePage !== 'command-center' && <div className="module-surface">{currentPage}</div>}
