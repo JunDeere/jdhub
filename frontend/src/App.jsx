@@ -34,6 +34,7 @@ import KnowledgeBase from './pages/KnowledgeBase.jsx';
 import LifeLog from './pages/LifeLog.jsx';
 import ModuleStatus from './pages/ModuleStatus.jsx';
 import Projects from './pages/Projects.jsx';
+import Reviews from './pages/Reviews.jsx';
 import PublicShare from './pages/PublicShare.jsx';
 import Scheduling from './pages/Scheduling.jsx';
 import ServerManager from './pages/ServerManager.jsx';
@@ -48,7 +49,7 @@ const THEME_KEY = 'jdhubTheme';
 const SIDEBAR_KEY = 'jdhubSidebarCollapsed';
 const ASSISTANT_WIDTH_KEY = 'jdhubAssistantWidth';
 const PORTFOLIO_DEMO_PAGE_IDS = new Set(['dashboard', 'projects', 'tasks', 'scheduling', 'knowledge-base']);
-const DIRECT_HASH_PAGE_IDS = new Set([...PORTFOLIO_DEMO_PAGE_IDS, 'settings']);
+const DIRECT_HASH_PAGE_IDS = new Set([...PORTFOLIO_DEMO_PAGE_IDS, 'reviews', 'settings']);
 
 function initialActivePage() {
   const requested = window.location.hash.slice(1);
@@ -60,6 +61,7 @@ const navIcons = {
   'command-center': SearchCheck,
   'life-log': FileText,
   diary: BookLock,
+  reviews: Activity,
   tasks: ClipboardList,
   scheduling: CalendarDays,
   finance: CircleDollarSign,
@@ -86,6 +88,7 @@ const navGroups = [
     label: 'Personal',
     items: [
       { id: 'diary', label: 'Diary' },
+      { id: 'reviews', label: 'Reviews' },
       { id: 'life-log', label: 'Notes' },
       { id: 'tasks', label: 'Tasks' },
       { id: 'scheduling', label: 'Scheduling' },
@@ -738,6 +741,8 @@ function PrivateApp() {
         ? <LifeLog token={token} refreshKey={moduleRefreshKey} onEntriesChanged={handleDataChanged} />
       : activePage === 'diary'
         ? <Diary token={token} />
+      : activePage === 'reviews'
+        ? <Reviews token={token} onNavigate={navigateToPage} />
       : activePage === 'tasks'
         ? <Tasks token={token} refreshKey={moduleRefreshKey} onTasksChanged={handleDataChanged} />
       : activePage === 'finance'
