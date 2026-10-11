@@ -1,4 +1,4 @@
-import { CalendarPlus, ChevronLeft, ChevronRight, Cloud, Edit3, RefreshCw, Trash2, Unplug, X } from 'lucide-react';
+import { CalendarPlus, ChevronLeft, ChevronRight, Cloud, Edit3, Plus, RefreshCw, Trash2, Unplug, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   createScheduleItem,
@@ -98,7 +98,8 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [statusMessage, setStatusMessage] = useState(null);
-  const [googleStatus, setGoogleStatus] = useState({ configured: true, connected: false });
+  const [googleStatus, setGoogleStatus] = useState({ configured: true, connected: false, accounts: [] });
+  const [selectedGoogleAccountId, setSelectedGoogleAccountId] = useState('');
   const [googleBusy, setGoogleBusy] = useState('');
 
   const loadSchedule = async () => {
@@ -117,6 +118,9 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
   const loadGoogleStatus = async () => {
     const data = await getGoogleCalendarStatus(token);
     setGoogleStatus(data);
+    setSelectedGoogleAccountId((current) => (
+      data.accounts?.some((account) => account.id === current) ? current : data.accounts?.[0]?.id || ''
+    ));
     return data;
   };
 
@@ -143,7 +147,14 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
     let cancelled = false;
     let feedbackTimer;
     getGoogleCalendarStatus(token)
-      .then((data) => { if (!cancelled) setGoogleStatus(data); })
+      .then((data) => {
+        if (!cancelled) {
+          setGoogleStatus(data);
+          setSelectedGoogleAccountId((current) => (
+            data.accounts?.some((account) => account.id === current) ? current : data.accounts?.[0]?.id || ''
+          ));
+        }
+      })
       .catch((err) => { if (!cancelled) setError(err.message); });
 
     const url = new URL(window.location.href);
@@ -182,12 +193,34 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
   };
 
   const importFromGoogle = async () => {
+    if (!selectedGoogleAccountId) return;
     setGoogleBusy('import');
     setError(null);
     setStatusMessage(null);
     try {
-      const data = await importGoogleCalendar(token);
-      setStatusMessage(`Imported ${data.imported} Google Calendar event${data.imported === 1 ? '' : 's'}.`);
+      const data = await importGoogleCalendar(token, selectedGoogleAccountId);
+      setStatusMessage(`Imported ${data.imported} event${data.imported === 1 ? '' : 's'} from ${data.accountEmail}.`);
+      await Promise.all([loadSchedule(), loadGoogleStatus()]);
+      onScheduleChanged?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGoogleBusy('');
+    }
+  };
+
+  const importAllFromGoogle = async () => {
+    if (!googleStatus.accounts?.length) return;
+    setGoogleBusy('import-all');
+    setError(null);
+    setStatusMessage(null);
+    try {
+      let total = 0;
+      for (const account of googleStatus.accounts) {
+        const data = await importGoogleCalendar(token, account.id);
+        total += data.imported;
+      }
+      setStatusMessage(`Imported ${total} event${total === 1 ? '' : 's'} across ${googleStatus.accounts.length} Google accounts.`);
       await Promise.all([loadSchedule(), loadGoogleStatus()]);
       onScheduleChanged?.();
     } catch (err) {
@@ -198,14 +231,16 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
   };
 
   const pushToGoogle = async () => {
-    const confirmed = window.confirm('Create or update your JDHub schedule items in Google Calendar? Google events will not be deleted.');
+    const selectedAccount = googleStatus.accounts?.find((account) => account.id === selectedGoogleAccountId);
+    if (!selectedAccount) return;
+    const confirmed = window.confirm(`Create or update your JDHub schedule items in ${selectedAccount.accountEmail}? Google events will not be deleted.`);
     if (!confirmed) return;
     setGoogleBusy('push');
     setError(null);
     setStatusMessage(null);
     try {
-      const data = await pushScheduleToGoogle(token);
-      setStatusMessage(`Google Calendar updated: ${data.created} created, ${data.updated} updated.`);
+      const data = await pushScheduleToGoogle(token, selectedGoogleAccountId);
+      setStatusMessage(`${data.accountEmail} updated: ${data.created} created, ${data.updated} updated.`);
       await Promise.all([loadSchedule(), loadGoogleStatus()]);
     } catch (err) {
       setError(err.message);
@@ -215,13 +250,15 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
   };
 
   const disconnectGoogle = async () => {
-    if (!window.confirm('Disconnect Google Calendar from JDHub? Existing events in either calendar will not be deleted.')) return;
+    const selectedAccount = googleStatus.accounts?.find((account) => account.id === selectedGoogleAccountId);
+    if (!selectedAccount) return;
+    if (!window.confirm(`Disconnect ${selectedAccount.accountEmail} from JDHub? Existing events in either calendar will not be deleted.`)) return;
     setGoogleBusy('disconnect');
     setError(null);
     try {
-      await disconnectGoogleCalendar(token);
-      setGoogleStatus({ configured: true, connected: false });
-      setStatusMessage('Google Calendar disconnected.');
+      await disconnectGoogleCalendar(token, selectedGoogleAccountId);
+      await loadGoogleStatus();
+      setStatusMessage(`${selectedAccount.accountEmail} disconnected.`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -236,6 +273,8 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
 
   const selectedItems = itemsByDate[selectedDate] || [];
   const calendarDays = buildCalendarDays(visibleMonth);
+  const googleAccounts = googleStatus.accounts || [];
+  const selectedGoogleAccount = googleAccounts.find((account) => account.id === selectedGoogleAccountId);
 
   const updateForm = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -350,27 +389,45 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
             <strong>Google Calendar</strong>
             <p className="muted">
               {googleStatus.connected
-                ? `Connected${googleStatus.accountEmail ? ` as ${googleStatus.accountEmail}` : ''}. Import Google events or push JDHub items when you choose.`
+                ? `${googleAccounts.length} Google account${googleAccounts.length === 1 ? '' : 's'} connected. Their imported events appear together in JDHub.`
                 : googleStatus.configured === false
                   ? 'Server setup is required before an account can be connected.'
                   : 'Connect your account to bring Google events into this calendar.'}
             </p>
-            {googleStatus.lastSyncedAt && <small>Last synced {new Date(googleStatus.lastSyncedAt).toLocaleString()}</small>}
+            {selectedGoogleAccount?.lastSyncedAt && <small>Last synced {new Date(selectedGoogleAccount.lastSyncedAt).toLocaleString()}</small>}
           </div>
         </div>
         <div className="google-calendar-actions">
           {googleStatus.connected ? (
             <>
+              <label className="google-account-picker">
+                <span>Google account</span>
+                <select value={selectedGoogleAccountId} onChange={(event) => setSelectedGoogleAccountId(event.target.value)}>
+                  {googleAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>{account.accountEmail}</option>
+                  ))}
+                </select>
+              </label>
               <button className="secondary-button" disabled={Boolean(googleBusy)} onClick={importFromGoogle} type="button">
                 <RefreshCw className={googleBusy === 'import' ? 'spin' : ''} size={16} />
-                {googleBusy === 'import' ? 'Importing...' : 'Import from Google'}
+                {googleBusy === 'import' ? 'Importing...' : 'Import selected'}
               </button>
+              {googleAccounts.length > 1 && (
+                <button className="secondary-button" disabled={Boolean(googleBusy)} onClick={importAllFromGoogle} type="button">
+                  <RefreshCw className={googleBusy === 'import-all' ? 'spin' : ''} size={16} />
+                  {googleBusy === 'import-all' ? 'Importing all...' : 'Import all'}
+                </button>
+              )}
               <button className="primary-button" disabled={Boolean(googleBusy)} onClick={pushToGoogle} type="button">
                 <Cloud size={16} />
                 {googleBusy === 'push' ? 'Syncing...' : 'Push JDHub to Google'}
               </button>
               <button aria-label="Disconnect Google Calendar" className="icon-only-button" disabled={Boolean(googleBusy)} onClick={disconnectGoogle} title="Disconnect Google Calendar" type="button">
                 <Unplug size={17} />
+              </button>
+              <button className="secondary-button" disabled={Boolean(googleBusy)} onClick={connectGoogle} type="button">
+                <Plus size={16} />
+                Add account
               </button>
             </>
           ) : (
@@ -445,7 +502,13 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
                   <div>
                     <span>{item.all_day ? 'All day' : `${timeLabel(item.start_at)}${item.end_at ? ` - ${timeLabel(item.end_at)}` : ''}`}</span>
                     <strong>{item.title}</strong>
-                    {item.external_provider === 'google' && <small className="google-event-label">Google Calendar</small>}
+                    {item.external_provider === 'google' && (
+                      <small className="google-event-label">
+                        Google Calendar{item.google_calendar_links?.length > 1
+                          ? ` · ${item.google_calendar_links.length} accounts`
+                          : item.external_account_email ? ` · ${item.external_account_email}` : ''}
+                      </small>
+                    )}
                     {item.location && <small>{item.location}</small>}
                     {item.description && <p>{item.description}</p>}
                   </div>

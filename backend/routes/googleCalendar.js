@@ -13,6 +13,7 @@ const {
   exchangeAuthorizationCode,
   googleEventTimes,
   isGoogleConfigured,
+  migrateLegacyAccount,
   scheduleEventBody,
   userInfo,
 } = require('../services/googleCalendar');
@@ -29,6 +30,36 @@ function routeError(res, error) {
   res.status(status).json({ error: status >= 500 ? 'Google Calendar request failed' : error.message });
 }
 
+function requestedConnectionId(req) {
+  return typeof req.body?.connectionId === 'string' ? req.body.connectionId.trim() : '';
+}
+
+function publicAccount(account) {
+  return {
+    id: String(account._id),
+    accountEmail: account.account_email,
+    calendarId: account.calendar_id,
+    connectedAt: account.connected_at,
+    lastSyncedAt: account.last_synced_at || null,
+    lastError: account.last_error || '',
+  };
+}
+
+function setGoogleLink(item, connection, event) {
+  let link = item.google_calendar_links.find(
+    (entry) => String(entry.connection_id) === String(connection._id) && entry.event_id === event.id,
+  );
+  const values = {
+    connection_id: connection._id,
+    calendar_id: connection.calendar_id,
+    event_id: event.id,
+    event_url: event.htmlLink || '',
+    event_updated_at: event.updated ? new Date(event.updated) : undefined,
+  };
+  if (link) Object.assign(link, values);
+  else item.google_calendar_links.push(values);
+}
+
 router.get('/callback', async (req, res) => {
   try {
     if (!isGoogleConfigured()) return res.redirect(frontendRedirect('not_configured'));
@@ -43,26 +74,46 @@ router.get('/callback', async (req, res) => {
       return res.redirect(frontendRedirect('invalid_state'));
     }
 
-    const existing = await GoogleCalendarConnection.findOne({ user_id: state.userId }).select('+token_blob');
     const tokens = await exchangeAuthorizationCode(String(req.query.code));
-    if (!tokens.refresh_token && existing?.token_blob) {
-      tokens.refresh_token = decryptTokens(existing.token_blob).refresh_token;
-    }
-    if (!tokens.access_token || !tokens.refresh_token) return res.redirect(frontendRedirect('missing_token'));
-
+    if (!tokens.access_token) return res.redirect(frontendRedirect('missing_token'));
     const profile = await userInfo(tokens.access_token);
-    await GoogleCalendarConnection.findOneAndUpdate(
-      { user_id: state.userId },
-      {
-        account_email: profile.email || '',
-        calendar_id: 'primary',
-        token_blob: encryptTokens(tokens),
-        scopes: String(tokens.scope || '').split(' ').filter(Boolean),
-        connected_at: new Date(),
-        last_error: '',
-      },
-      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
-    );
+    const email = String(profile.email || '').trim().toLowerCase();
+    if (!email) return res.redirect(frontendRedirect('missing_email'));
+
+    let record = await GoogleCalendarConnection.findOne({ user_id: state.userId })
+      .select('+token_blob +accounts.token_blob');
+    if (!record) record = new GoogleCalendarConnection({ user_id: state.userId });
+    migrateLegacyAccount(record);
+
+    let account = record.accounts.find((candidate) => (
+      (profile.sub && candidate.account_subject === profile.sub)
+      || candidate.account_email === email
+    ));
+    if (!tokens.refresh_token && account?.token_blob) {
+      tokens.refresh_token = decryptTokens(account.token_blob).refresh_token;
+    }
+    if (!tokens.refresh_token) return res.redirect(frontendRedirect('missing_token'));
+
+    const values = {
+      account_subject: profile.sub || account?.account_subject || '',
+      account_email: email,
+      calendar_id: account?.calendar_id || 'primary',
+      token_blob: encryptTokens(tokens),
+      scopes: String(tokens.scope || '').split(' ').filter(Boolean),
+      connected_at: new Date(),
+      last_error: '',
+    };
+    if (account) Object.assign(account, values);
+    else record.accounts.push(values);
+
+    record.account_email = undefined;
+    record.calendar_id = undefined;
+    record.token_blob = undefined;
+    record.scopes = undefined;
+    record.connected_at = undefined;
+    record.last_synced_at = undefined;
+    record.last_error = undefined;
+    await record.save();
     return res.redirect(frontendRedirect('connected'));
   } catch (error) {
     console.error('Google Calendar OAuth callback failed:', error.message);
@@ -74,12 +125,18 @@ router.use(authMiddleware);
 
 router.get('/status', async (req, res) => {
   try {
-    const connection = await GoogleCalendarConnection.findOne({ user_id: req.userId });
+    const connection = await GoogleCalendarConnection.findOne({ user_id: req.userId })
+      .select('+token_blob +accounts.token_blob');
+    if (migrateLegacyAccount(connection)) await connection.save();
+    const accounts = (connection?.accounts || [])
+      .map(publicAccount)
+      .sort((left, right) => new Date(right.connectedAt || 0) - new Date(left.connectedAt || 0));
     res.json({
       configured: isGoogleConfigured(),
-      connected: Boolean(connection),
-      accountEmail: connection?.account_email || null,
-      lastSyncedAt: connection?.last_synced_at || null,
+      connected: accounts.length > 0,
+      accounts,
+      accountEmail: accounts[0]?.accountEmail || null,
+      lastSyncedAt: accounts[0]?.lastSyncedAt || null,
     });
   } catch (error) {
     routeError(res, error);
@@ -100,7 +157,14 @@ router.post('/connect', (req, res) => {
 
 router.post('/disconnect', async (req, res) => {
   try {
-    await GoogleCalendarConnection.deleteOne({ user_id: req.userId });
+    const connectionId = requestedConnectionId(req);
+    if (!connectionId) return res.status(400).json({ error: 'Google account is required' });
+    const record = await GoogleCalendarConnection.findOne({ user_id: req.userId }).select('+accounts.token_blob');
+    const account = record?.accounts.find((candidate) => String(candidate._id) === connectionId);
+    if (!account) return res.status(404).json({ error: 'Google Calendar account not found' });
+    account.deleteOne();
+    if (record.accounts.length) await record.save();
+    else await record.deleteOne();
     res.json({ success: true });
   } catch (error) {
     routeError(res, error);
@@ -109,7 +173,9 @@ router.post('/disconnect', async (req, res) => {
 
 router.post('/import', async (req, res) => {
   try {
-    const { connection, accessToken } = await authorizedConnection(req.userId);
+    const connectionId = requestedConnectionId(req);
+    if (!connectionId) return res.status(400).json({ error: 'Google account is required' });
+    const { connection, accessToken } = await authorizedConnection(req.userId, connectionId);
     const timeMin = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString();
     let pageToken;
@@ -130,30 +196,38 @@ router.post('/import', async (req, res) => {
         if (!event.id || event.status === 'cancelled') continue;
         const { start, end } = googleEventTimes(event);
         if (!start || Number.isNaN(start.getTime())) continue;
-        const existingItem = await ScheduleItem.findOne({
+        let existingItem = await ScheduleItem.findOne({
           user_id: req.userId,
-          external_provider: 'google',
-          external_calendar_id: event.id,
-        }).select('sync_source');
-        await ScheduleItem.findOneAndUpdate(
-          { user_id: req.userId, external_provider: 'google', external_calendar_id: event.id },
-          {
-            title: event.summary || '(Untitled Google event)',
-            description: event.description || '',
-            location: event.location || '',
-            start_at: start,
-            end_at: end && !Number.isNaN(end.getTime()) ? end : undefined,
-            all_day: Boolean(event.start?.date),
-            status: 'scheduled',
+          google_calendar_links: {
+            $elemMatch: { connection_id: connection._id, event_id: event.id },
+          },
+        });
+        if (!existingItem) {
+          existingItem = await ScheduleItem.findOne({
+            user_id: req.userId,
             external_provider: 'google',
             external_calendar_id: event.id,
-            external_url: event.htmlLink || '',
-            external_updated_at: event.updated ? new Date(event.updated) : undefined,
-            sync_source: existingItem?.sync_source === 'jdhub' ? 'jdhub' : 'google',
-            sync_last_at: new Date(),
-          },
-          { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
-        );
+            'google_calendar_links.0': { $exists: false },
+          });
+        }
+        if (!existingItem) existingItem = new ScheduleItem({ user_id: req.userId });
+
+        existingItem.title = event.summary || '(Untitled Google event)';
+        existingItem.description = event.description || '';
+        existingItem.location = event.location || '';
+        existingItem.start_at = start;
+        existingItem.end_at = end && !Number.isNaN(end.getTime()) ? end : undefined;
+        existingItem.all_day = Boolean(event.start?.date);
+        existingItem.status = 'scheduled';
+        existingItem.external_provider = 'google';
+        existingItem.external_calendar_id = event.id;
+        existingItem.external_url = event.htmlLink || '';
+        existingItem.external_updated_at = event.updated ? new Date(event.updated) : undefined;
+        existingItem.external_account_email = connection.account_email;
+        existingItem.sync_source = existingItem.sync_source === 'jdhub' ? 'jdhub' : 'google';
+        existingItem.sync_last_at = new Date();
+        setGoogleLink(existingItem, connection, event);
+        await existingItem.save();
         imported += 1;
       }
       pageToken = data.nextPageToken;
@@ -161,8 +235,8 @@ router.post('/import', async (req, res) => {
 
     connection.last_synced_at = new Date();
     connection.last_error = '';
-    await connection.save();
-    res.json({ imported, lastSyncedAt: connection.last_synced_at });
+    await connection.parent().save();
+    res.json({ imported, accountEmail: connection.account_email, lastSyncedAt: connection.last_synced_at });
   } catch (error) {
     routeError(res, error);
   }
@@ -170,7 +244,9 @@ router.post('/import', async (req, res) => {
 
 router.post('/push', async (req, res) => {
   try {
-    const { connection, accessToken } = await authorizedConnection(req.userId);
+    const connectionId = requestedConnectionId(req);
+    if (!connectionId) return res.status(400).json({ error: 'Google account is required' });
+    const { connection, accessToken } = await authorizedConnection(req.userId, connectionId);
     const items = await ScheduleItem.find({
       user_id: req.userId,
       status: { $ne: 'cancelled' },
@@ -183,10 +259,13 @@ router.post('/push', async (req, res) => {
     for (const item of items) {
       const body = JSON.stringify(scheduleEventBody(item));
       let event;
-      if (item.external_provider === 'google' && item.external_calendar_id) {
+      const existingLink = item.google_calendar_links.find(
+        (entry) => String(entry.connection_id) === String(connection._id),
+      );
+      if (existingLink?.event_id) {
         event = await calendarRequest(
           accessToken,
-          `/calendars/${encodeURIComponent(connection.calendar_id)}/events/${encodeURIComponent(item.external_calendar_id)}`,
+          `/calendars/${encodeURIComponent(connection.calendar_id)}/events/${encodeURIComponent(existingLink.event_id)}`,
           { method: 'PATCH', body },
         );
         updated += 1;
@@ -202,15 +281,17 @@ router.post('/push', async (req, res) => {
       item.external_calendar_id = event.id;
       item.external_url = event.htmlLink || '';
       item.external_updated_at = event.updated ? new Date(event.updated) : undefined;
+      item.external_account_email = connection.account_email;
       item.sync_source = 'jdhub';
       item.sync_last_at = new Date();
+      setGoogleLink(item, connection, event);
       await item.save();
     }
 
     connection.last_synced_at = new Date();
     connection.last_error = '';
-    await connection.save();
-    res.json({ created, updated, lastSyncedAt: connection.last_synced_at });
+    await connection.parent().save();
+    res.json({ created, updated, accountEmail: connection.account_email, lastSyncedAt: connection.last_synced_at });
   } catch (error) {
     routeError(res, error);
   }

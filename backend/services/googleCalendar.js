@@ -73,7 +73,7 @@ function authorizationUrl(state) {
     scope: GOOGLE_SCOPES.join(' '),
     access_type: 'offline',
     include_granted_scopes: 'true',
-    prompt: 'consent',
+    prompt: 'select_account consent',
     state,
   });
   return `${GOOGLE_AUTH_URL}?${query.toString()}`;
@@ -105,14 +105,43 @@ async function userInfo(accessToken) {
 }
 
 async function connectionWithTokens(userId) {
-  return GoogleCalendarConnection.findOne({ user_id: userId }).select('+token_blob');
+  return GoogleCalendarConnection.findOne({ user_id: userId }).select('+token_blob +accounts.token_blob');
 }
 
-async function authorizedConnection(userId) {
-  const connection = await connectionWithTokens(userId);
-  if (!connection) {
+function migrateLegacyAccount(connection) {
+  if (!connection || connection.accounts.length || !connection.token_blob || !connection.account_email) return false;
+  connection.accounts.push({
+    account_email: connection.account_email,
+    calendar_id: connection.calendar_id || 'primary',
+    token_blob: connection.token_blob,
+    scopes: connection.scopes || [],
+    connected_at: connection.connected_at || connection.createdAt || new Date(),
+    last_synced_at: connection.last_synced_at,
+    last_error: connection.last_error || '',
+  });
+  connection.account_email = undefined;
+  connection.calendar_id = undefined;
+  connection.token_blob = undefined;
+  connection.scopes = undefined;
+  connection.connected_at = undefined;
+  connection.last_synced_at = undefined;
+  connection.last_error = undefined;
+  return true;
+}
+
+async function authorizedConnection(userId, connectionId) {
+  const connectionRecord = await connectionWithTokens(userId);
+  if (!connectionRecord) {
     const error = new Error('Google Calendar is not connected');
     error.status = 409;
+    throw error;
+  }
+
+  if (migrateLegacyAccount(connectionRecord)) await connectionRecord.save();
+  const connection = connectionRecord.accounts.find((account) => String(account._id) === String(connectionId || ''));
+  if (!connection) {
+    const error = new Error('Google Calendar account not found');
+    error.status = 404;
     throw error;
   }
 
@@ -144,7 +173,7 @@ async function authorizedConnection(userId) {
     expiry_date: Date.now() + Number(refreshed.expires_in || 3600) * 1000,
   };
   connection.token_blob = encryptTokens(tokens);
-  await connection.save();
+  await connectionRecord.save();
   return { connection, accessToken: tokens.access_token };
 }
 
@@ -189,6 +218,7 @@ module.exports = {
   googleConfig,
   googleEventTimes,
   isGoogleConfigured,
+  migrateLegacyAccount,
   scheduleEventBody,
   userInfo,
 };

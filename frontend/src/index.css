@@ -5890,6 +5890,19 @@ h3 {
   gap: 7px;
 }
 
+.google-account-picker {
+  display: grid;
+  gap: 4px;
+  min-width: 210px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.google-account-picker select {
+  min-height: 38px;
+}
+
 .google-event-label {
   width: fit-content;
   border-radius: 999px;
@@ -7512,7 +7525,8 @@ h3 {
   }
 
   .google-calendar-actions,
-  .google-calendar-actions button:not(.icon-only-button) {
+  .google-calendar-actions button:not(.icon-only-button),
+  .google-account-picker {
     width: 100%;
   }
 

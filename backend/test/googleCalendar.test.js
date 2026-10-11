@@ -5,6 +5,7 @@ const {
   decryptTokens,
   encryptTokens,
   googleEventTimes,
+  migrateLegacyAccount,
   scheduleEventBody,
 } = require('../services/googleCalendar');
 
@@ -35,6 +36,7 @@ test('builds a Google authorization URL for offline calendar access', () => {
     assert.equal(url.origin, 'https://accounts.google.com');
     assert.equal(url.searchParams.get('access_type'), 'offline');
     assert.equal(url.searchParams.get('state'), 'signed-state');
+    assert.equal(url.searchParams.get('prompt'), 'select_account consent');
     assert.match(url.searchParams.get('scope'), /calendar\.events/);
   } finally {
     if (previous.clientId === undefined) delete process.env.GOOGLE_CLIENT_ID;
@@ -42,6 +44,24 @@ test('builds a Google authorization URL for offline calendar access', () => {
     if (previous.redirectUri === undefined) delete process.env.GOOGLE_REDIRECT_URI;
     else process.env.GOOGLE_REDIRECT_URI = previous.redirectUri;
   }
+});
+
+test('moves a legacy single Google account into the multi-account collection', () => {
+  const accounts = [];
+  const connection = {
+    accounts,
+    account_email: 'first@example.com',
+    calendar_id: 'primary',
+    token_blob: 'encrypted-token',
+    scopes: ['calendar'],
+    connected_at: new Date('2026-10-11T00:00:00.000Z'),
+  };
+
+  assert.equal(migrateLegacyAccount(connection), true);
+  assert.equal(accounts.length, 1);
+  assert.equal(accounts[0].account_email, 'first@example.com');
+  assert.equal(accounts[0].token_blob, 'encrypted-token');
+  assert.equal(migrateLegacyAccount(connection), false);
 });
 
 test('maps timed and all-day Google event dates', () => {

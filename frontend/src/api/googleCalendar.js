@@ -25,26 +25,29 @@ export async function startGoogleCalendarConnection(token) {
   return parseJson(response);
 }
 
-export async function disconnectGoogleCalendar(token) {
+export async function disconnectGoogleCalendar(token, connectionId) {
   const response = await fetch(`${API_BASE}/api/google-calendar/disconnect`, {
     method: 'POST',
     headers: authHeaders(token),
+    body: JSON.stringify({ connectionId }),
   });
   return parseJson(response);
 }
 
-export async function importGoogleCalendar(token) {
+export async function importGoogleCalendar(token, connectionId) {
   const response = await fetch(`${API_BASE}/api/google-calendar/import`, {
     method: 'POST',
     headers: authHeaders(token),
+    body: JSON.stringify({ connectionId }),
   });
   return parseJson(response);
 }
 
-export async function pushScheduleToGoogle(token) {
+export async function pushScheduleToGoogle(token, connectionId) {
   const response = await fetch(`${API_BASE}/api/google-calendar/push`, {
     method: 'POST',
     headers: authHeaders(token),
+    body: JSON.stringify({ connectionId }),
   });
   return parseJson(response);
 }
