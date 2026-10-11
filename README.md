@@ -161,6 +161,12 @@ cd backend
 npm run sync:notepad
 ```
 
+While the continuous bridge is running, the Notes page can trigger an immediate
+backup with **Retrieve notes**. The bridge exposes a loopback-only control on
+`127.0.0.1:38471`; it accepts requests only from the configured JDHub origins.
+Use `NOTEPAD_BRIDGE_PORT` and `NOTEPAD_BRIDGE_ALLOWED_ORIGINS` in
+`backend/.env.notepad-bridge` to override those defaults.
+
 The configured workstation also runs this bridge through the Windows scheduled
 task named `JDHub Notepad Backup` at sign-in.
 
@@ -174,6 +180,32 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 Set a strong `JWT_SECRET`, production `CORS_ORIGINS`, and any reverse-proxy HTTPS settings before exposing JDHub.
 Set `PUBLIC_SHARE_ORIGIN=https://share.jdeere.net` for 24-hour external file links, and include both the private JDHub origin and the share origin in `CORS_ORIGINS`.
+
+### Google Calendar
+
+Create a Google Cloud OAuth client with application type **Web application**, enable
+the Google Calendar API, and add the exact production callback URL:
+
+```text
+https://jdhub.jdeere.net/api/google-calendar/callback
+```
+
+Then set these values in the production `.env`:
+
+```text
+GOOGLE_CLIENT_ID=your-web-client-id
+GOOGLE_CLIENT_SECRET=your-web-client-secret
+GOOGLE_REDIRECT_URI=https://jdhub.jdeere.net/api/google-calendar/callback
+GOOGLE_TOKEN_ENCRYPTION_KEY=a-separate-long-random-secret
+APP_PUBLIC_ORIGIN=https://jdhub.jdeere.net
+```
+
+Keep the client secret and token-encryption key out of Git. If the Google OAuth
+app is in Testing mode, add the JDHub account's Google address as a test user.
+The Scheduling page can then import events from the primary Google calendar and,
+after an explicit confirmation, create or update JDHub schedule items in Google.
+Disconnecting removes the stored OAuth credentials without deleting events.
+
 Production Compose disables new account registration by default. Existing users
 can still sign in; set `ALLOW_REGISTRATION=true` only during a controlled account
 creation window.

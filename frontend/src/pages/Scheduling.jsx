@@ -1,4 +1,4 @@
-import { CalendarPlus, ChevronLeft, ChevronRight, Edit3, Trash2, X } from 'lucide-react';
+import { CalendarPlus, ChevronLeft, ChevronRight, Cloud, Edit3, RefreshCw, Trash2, Unplug, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   createScheduleItem,
@@ -6,6 +6,13 @@ import {
   getSchedule,
   updateScheduleItem,
 } from '../api/schedule.js';
+import {
+  disconnectGoogleCalendar,
+  getGoogleCalendarStatus,
+  importGoogleCalendar,
+  pushScheduleToGoogle,
+  startGoogleCalendarConnection,
+} from '../api/googleCalendar.js';
 import StatusToast from '../components/StatusToast.jsx';
 import {
   formatLocalDate,
@@ -91,6 +98,8 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [statusMessage, setStatusMessage] = useState(null);
+  const [googleStatus, setGoogleStatus] = useState({ configured: true, connected: false });
+  const [googleBusy, setGoogleBusy] = useState('');
 
   const loadSchedule = async () => {
     setLoading(true);
@@ -103,6 +112,12 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadGoogleStatus = async () => {
+    const data = await getGoogleCalendarStatus(token);
+    setGoogleStatus(data);
+    return data;
   };
 
   useEffect(() => {
@@ -123,6 +138,96 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
       cancelled = true;
     };
   }, [token, refreshKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let feedbackTimer;
+    getGoogleCalendarStatus(token)
+      .then((data) => { if (!cancelled) setGoogleStatus(data); })
+      .catch((err) => { if (!cancelled) setError(err.message); });
+
+    const url = new URL(window.location.href);
+    const result = url.searchParams.get('google_calendar');
+    if (result) {
+      const messages = {
+        connected: 'Google Calendar connected.',
+        denied: 'Google Calendar access was cancelled.',
+        failed: 'Google Calendar could not be connected.',
+        not_configured: 'Google Calendar is not configured on this server.',
+      };
+      feedbackTimer = window.setTimeout(() => {
+        if (result === 'connected') setStatusMessage(messages[result]);
+        else setError(messages[result] || 'Google Calendar connection failed.');
+      }, 0);
+      url.searchParams.delete('google_calendar');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+
+    return () => {
+      cancelled = true;
+      if (feedbackTimer) window.clearTimeout(feedbackTimer);
+    };
+  }, [token]);
+
+  const connectGoogle = async () => {
+    setGoogleBusy('connect');
+    setError(null);
+    try {
+      const data = await startGoogleCalendarConnection(token);
+      window.location.assign(data.authorizationUrl);
+    } catch (err) {
+      setError(err.message);
+      setGoogleBusy('');
+    }
+  };
+
+  const importFromGoogle = async () => {
+    setGoogleBusy('import');
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const data = await importGoogleCalendar(token);
+      setStatusMessage(`Imported ${data.imported} Google Calendar event${data.imported === 1 ? '' : 's'}.`);
+      await Promise.all([loadSchedule(), loadGoogleStatus()]);
+      onScheduleChanged?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGoogleBusy('');
+    }
+  };
+
+  const pushToGoogle = async () => {
+    const confirmed = window.confirm('Create or update your JDHub schedule items in Google Calendar? Google events will not be deleted.');
+    if (!confirmed) return;
+    setGoogleBusy('push');
+    setError(null);
+    setStatusMessage(null);
+    try {
+      const data = await pushScheduleToGoogle(token);
+      setStatusMessage(`Google Calendar updated: ${data.created} created, ${data.updated} updated.`);
+      await Promise.all([loadSchedule(), loadGoogleStatus()]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGoogleBusy('');
+    }
+  };
+
+  const disconnectGoogle = async () => {
+    if (!window.confirm('Disconnect Google Calendar from JDHub? Existing events in either calendar will not be deleted.')) return;
+    setGoogleBusy('disconnect');
+    setError(null);
+    try {
+      await disconnectGoogleCalendar(token);
+      setGoogleStatus({ configured: true, connected: false });
+      setStatusMessage('Google Calendar disconnected.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGoogleBusy('');
+    }
+  };
 
   const itemsByDate = useMemo(() => scheduleItems.reduce((groups, item) => {
     const key = dateKey(item.start_at);
@@ -238,6 +343,44 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
 
   return (
     <section className="scheduling-page">
+      <div className="panel google-calendar-panel">
+        <div className="google-calendar-copy">
+          <span className="google-calendar-icon"><Cloud size={18} /></span>
+          <div>
+            <strong>Google Calendar</strong>
+            <p className="muted">
+              {googleStatus.connected
+                ? `Connected${googleStatus.accountEmail ? ` as ${googleStatus.accountEmail}` : ''}. Import Google events or push JDHub items when you choose.`
+                : googleStatus.configured === false
+                  ? 'Server setup is required before an account can be connected.'
+                  : 'Connect your account to bring Google events into this calendar.'}
+            </p>
+            {googleStatus.lastSyncedAt && <small>Last synced {new Date(googleStatus.lastSyncedAt).toLocaleString()}</small>}
+          </div>
+        </div>
+        <div className="google-calendar-actions">
+          {googleStatus.connected ? (
+            <>
+              <button className="secondary-button" disabled={Boolean(googleBusy)} onClick={importFromGoogle} type="button">
+                <RefreshCw className={googleBusy === 'import' ? 'spin' : ''} size={16} />
+                {googleBusy === 'import' ? 'Importing...' : 'Import from Google'}
+              </button>
+              <button className="primary-button" disabled={Boolean(googleBusy)} onClick={pushToGoogle} type="button">
+                <Cloud size={16} />
+                {googleBusy === 'push' ? 'Syncing...' : 'Push JDHub to Google'}
+              </button>
+              <button aria-label="Disconnect Google Calendar" className="icon-only-button" disabled={Boolean(googleBusy)} onClick={disconnectGoogle} title="Disconnect Google Calendar" type="button">
+                <Unplug size={17} />
+              </button>
+            </>
+          ) : (
+            <button className="primary-button" disabled={googleStatus.configured === false || Boolean(googleBusy)} onClick={connectGoogle} type="button">
+              <Cloud size={16} />
+              {googleBusy === 'connect' ? 'Opening Google...' : 'Connect Google Calendar'}
+            </button>
+          )}
+        </div>
+      </div>
       <div className="calendar-shell">
         <div className="panel calendar-panel">
           <div className="calendar-toolbar">
@@ -300,8 +443,9 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
               {selectedItems.map((item) => (
                 <article className="schedule-agenda-item" key={item._id}>
                   <div>
-                    <span>{timeLabel(item.start_at)}{item.end_at ? ` - ${timeLabel(item.end_at)}` : ''}</span>
+                    <span>{item.all_day ? 'All day' : `${timeLabel(item.start_at)}${item.end_at ? ` - ${timeLabel(item.end_at)}` : ''}`}</span>
                     <strong>{item.title}</strong>
+                    {item.external_provider === 'google' && <small className="google-event-label">Google Calendar</small>}
                     {item.location && <small>{item.location}</small>}
                     {item.description && <p>{item.description}</p>}
                   </div>

@@ -177,6 +177,7 @@ h3 {
 .auth-card input,
 .command-preview button,
 .settings-form input,
+.settings-form select,
 .entry-form input,
 .entry-form select,
 .entry-form textarea,
@@ -1886,12 +1887,29 @@ h3 {
   padding: 10px 12px;
 }
 
+.dashboard-page .money-metric-card {
+  align-items: stretch;
+  justify-content: center;
+  gap: 3px;
+  flex-direction: column;
+}
+
 .metric-card-value {
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.money-metric-card .metric-card-value {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.money-metric-card .metric-card-value strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .metric-privacy-toggle {
@@ -2254,7 +2272,8 @@ h3 {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
-.settings-form input:focus {
+.settings-form input:focus,
+.settings-form select:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
@@ -2262,6 +2281,21 @@ h3 {
 .settings-form input:disabled {
   background: var(--surface-subtle);
   color: var(--muted);
+}
+
+.profile-phone-field {
+  grid-column: 1 / -1;
+}
+
+.profile-phone-control {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.75fr) minmax(200px, 1.25fr);
+  gap: 8px;
+}
+
+.profile-phone-field small {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .notepad-shell {
@@ -2293,6 +2327,31 @@ h3 {
 .notepad-backup-banner > div {
   display: grid;
   gap: 3px;
+}
+
+.notepad-backup-banner .notepad-backup-actions {
+  display: flex;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: end;
+  gap: 8px;
+}
+
+.notepad-backup-actions button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.notepad-backup-actions .spin {
+  animation: notepad-sync-spin 0.85s linear infinite;
+}
+
+@keyframes notepad-sync-spin {
+  to { transform: rotate(360deg); }
 }
 
 .notepad-backup-banner span {
@@ -5774,6 +5833,81 @@ h3 {
   min-height: 240px;
 }
 
+.google-calendar-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.google-calendar-copy,
+.google-calendar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.google-calendar-copy {
+  min-width: 0;
+}
+
+.google-calendar-copy > div {
+  min-width: 0;
+}
+
+.google-calendar-copy p {
+  margin: 3px 0 0;
+}
+
+.google-calendar-copy small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.google-calendar-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+}
+
+.google-calendar-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.google-calendar-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.google-event-label {
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary-strong) !important;
+  padding: 2px 7px;
+  font-size: 10px !important;
+  font-weight: 750;
+}
+
+.spin {
+  animation: google-calendar-spin 0.85s linear infinite;
+}
+
+@keyframes google-calendar-spin {
+  to { transform: rotate(360deg); }
+}
+
 .calendar-shell {
   display: grid;
   grid-template-columns: minmax(320px, 520px) minmax(0, 1fr);
@@ -7368,6 +7502,20 @@ h3 {
     gap: 12px;
   }
 
+  .google-calendar-panel,
+  .google-calendar-copy {
+    align-items: flex-start;
+  }
+
+  .google-calendar-panel {
+    flex-direction: column;
+  }
+
+  .google-calendar-actions,
+  .google-calendar-actions button:not(.icon-only-button) {
+    width: 100%;
+  }
+
   .calendar-grid {
     gap: 4px;
   }
@@ -7461,6 +7609,19 @@ h3 {
 
   .notepad-shell {
     min-height: calc(100vh - 160px);
+  }
+
+  .notepad-backup-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .notepad-backup-banner .notepad-backup-actions {
+    justify-content: space-between;
+  }
+
+  .profile-phone-control {
+    grid-template-columns: 1fr;
   }
 
   .notepad-toolbar {

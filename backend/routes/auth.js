@@ -7,6 +7,7 @@ const LoginChallenge = require("../models/LoginChallenge");
 const TrustedBrowser = require("../models/TrustedBrowser");
 const authMiddleware = require("../middleware/auth");
 const { resetDemoData } = require("../services/demoAccount");
+const { normalizePhoneNumber } = require("../services/phoneNumbers");
 const {
   ensureUserRole,
   normalizeEmail,
@@ -362,7 +363,13 @@ router.patch("/me", authMiddleware, async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found" });
 
     user.name = typeof name === "string" ? name.trim() : user.name;
-    user.phone = typeof phone === "string" ? phone.trim() : user.phone;
+    if (typeof phone === "string") {
+      try {
+        user.phone = normalizePhoneNumber(phone);
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
+    }
     await user.save();
 
     res.json({ user: serializeUser(user) });

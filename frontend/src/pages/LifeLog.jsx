@@ -1,7 +1,7 @@
-import { Copy, Plus, Trash2, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Copy, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { archiveEntry, createEntry, getEntries, updateEntry } from '../api/entries.js';
-import { getNotepadSyncStatus } from '../api/notepadSync.js';
+import { getNotepadSyncStatus, retrieveWindowsNotepadNotes } from '../api/notepadSync.js';
 import StatusToast from '../components/StatusToast.jsx';
 
 function newDraftTab() {
@@ -59,6 +59,7 @@ export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
   const [activeTabId, setActiveTabId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [retrieving, setRetrieving] = useState(false);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
@@ -68,29 +69,33 @@ export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
     [tabs, activeTabId],
   );
 
+  const applyLoadedNotes = useCallback((data, desktopStatus) => {
+    setSyncStatus(desktopStatus);
+    const savedTabs = (data.entries || []).map(tabFromEntry);
+    const emptyStateDraft = savedTabs.length ? null : newDraftTab();
+
+    setTabs((currentTabs) => {
+      const localDrafts = currentTabs.filter((tab) => !tab.entryId && (tab.dirty || tab.content.trim()));
+      const editedSavedTabs = currentTabs.filter((tab) => tab.entryId && tab.dirty);
+      const editedIds = new Set(editedSavedTabs.map((tab) => tab.entryId));
+      const mergedSavedTabs = savedTabs.map((tab) => (
+        editedIds.has(tab.entryId)
+          ? editedSavedTabs.find((edited) => edited.entryId === tab.entryId)
+          : tab
+      ));
+      const nextTabs = [...localDrafts, ...mergedSavedTabs];
+      return nextTabs.length ? nextTabs : [emptyStateDraft || newDraftTab()];
+    });
+    setActiveTabId((currentId) => currentId || savedTabs[0]?.tabId || emptyStateDraft?.tabId || null);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
     Promise.all([getEntries(token), getNotepadSyncStatus(token)])
       .then(([data, desktopStatus]) => {
         if (cancelled) return;
-        setSyncStatus(desktopStatus);
-        const savedTabs = (data.entries || []).map(tabFromEntry);
-        const emptyStateDraft = savedTabs.length ? null : newDraftTab();
-
-        setTabs((currentTabs) => {
-          const localDrafts = currentTabs.filter((tab) => !tab.entryId && (tab.dirty || tab.content.trim()));
-          const editedSavedTabs = currentTabs.filter((tab) => tab.entryId && tab.dirty);
-          const editedIds = new Set(editedSavedTabs.map((tab) => tab.entryId));
-          const mergedSavedTabs = savedTabs.map((tab) => (
-            editedIds.has(tab.entryId)
-              ? editedSavedTabs.find((edited) => edited.entryId === tab.entryId)
-              : tab
-          ));
-          const nextTabs = [...localDrafts, ...mergedSavedTabs];
-          return nextTabs.length ? nextTabs : [emptyStateDraft || newDraftTab()];
-        });
-        setActiveTabId((currentId) => currentId || savedTabs[0]?.tabId || emptyStateDraft?.tabId || null);
+        applyLoadedNotes(data, desktopStatus);
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
@@ -102,7 +107,30 @@ export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
     return () => {
       cancelled = true;
     };
-  }, [token, refreshKey]);
+  }, [applyLoadedNotes, token, refreshKey]);
+
+  const retrieveDesktopNotes = async () => {
+    setRetrieving(true);
+    setError(null);
+    setStatus(null);
+
+    try {
+      const result = await retrieveWindowsNotepadNotes();
+      const [data, desktopStatus] = await Promise.all([
+        getEntries(token),
+        getNotepadSyncStatus(token),
+      ]);
+      applyLoadedNotes(data, desktopStatus);
+      setStatus(result.synced
+        ? `Retrieved ${result.noteCount} Windows Notepad note${result.noteCount === 1 ? '' : 's'}.`
+        : `Windows Notepad notes are already up to date (${result.noteCount} found).`);
+      onEntriesChanged?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRetrieving(false);
+    }
+  };
 
   useEffect(() => {
     if (!activeTab?.dirty || loading) return undefined;
@@ -274,7 +302,13 @@ export default function LifeLog({ token, refreshKey, onEntriesChanged }) {
               : 'Web notes still autosave normally. Start the desktop bridge to add read-only Notepad backups.'}
           </span>
         </div>
-        <span className="note-source-badge">Desktop → JDHub</span>
+        <div className="notepad-backup-actions">
+          <span className="note-source-badge">Desktop → JDHub</span>
+          <button className="secondary-button" disabled={retrieving} onClick={retrieveDesktopNotes} type="button">
+            <RefreshCw aria-hidden="true" className={retrieving ? 'spin' : ''} size={15} />
+            {retrieving ? 'Retrieving…' : 'Retrieve notes'}
+          </button>
+        </div>
       </div>
 
       <div className="notepad-shell">

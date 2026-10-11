@@ -20,6 +20,7 @@ import {
   Server,
   Settings,
 } from 'lucide-react';
+import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from 'libphonenumber-js/min';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import CommandCenter from './pages/CommandCenter.jsx';
 import Login from './pages/Login.jsx';
@@ -294,9 +295,30 @@ function ThemeControls({ theme, resolvedTheme, onThemeChange }) {
   );
 }
 
+const regionNames = typeof Intl.DisplayNames === 'function'
+  ? new Intl.DisplayNames(['en'], { type: 'region' })
+  : null;
+const phoneCountries = getCountries()
+  .map((country) => ({
+    code: country,
+    callingCode: getCountryCallingCode(country),
+    name: regionNames?.of(country) || country,
+  }))
+  .sort((left, right) => left.name.localeCompare(right.name));
+
+function initialPhoneValues(value) {
+  const parsed = value ? parsePhoneNumberFromString(value) : null;
+  return {
+    country: parsed?.country || 'PH',
+    nationalNumber: parsed?.formatNational() || String(value || ''),
+  };
+}
+
 function ProfileSettings({ token, user, onUserChange }) {
+  const initialPhone = initialPhoneValues(user?.phone);
   const [name, setName] = useState(user?.name || '');
-  const [phone, setPhone] = useState(user?.phone || '');
+  const [phoneCountry, setPhoneCountry] = useState(initialPhone.country);
+  const [phone, setPhone] = useState(initialPhone.nationalNumber);
   const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -306,8 +328,20 @@ function ProfileSettings({ token, user, onUserChange }) {
     setSaving(true);
 
     try {
-      const data = await updateCurrentUser(token, { name, phone });
+      let normalizedPhone = '';
+      if (phone.trim()) {
+        const parsed = parsePhoneNumberFromString(phone, phoneCountry);
+        if (!parsed?.isValid() || parsed.country !== phoneCountry) {
+          throw new Error('Enter a valid phone number for the selected country.');
+        }
+        normalizedPhone = parsed.number;
+      }
+
+      const data = await updateCurrentUser(token, { name, phone: normalizedPhone });
       onUserChange(data.user);
+      const savedPhone = initialPhoneValues(data.user.phone);
+      setPhoneCountry(savedPhone.country);
+      setPhone(savedPhone.nationalNumber);
       setStatus({ type: 'success', message: 'Profile saved.' });
     } catch (error) {
       setStatus({ type: 'error', message: error.message });
@@ -343,14 +377,31 @@ function ProfileSettings({ token, user, onUserChange }) {
           <input value={user?.email || ''} disabled />
         </label>
 
-        <label>
+        <label className="profile-phone-field">
           Phone number
-          <input
-            type="tel"
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            placeholder="+63..."
-          />
+          <div className="profile-phone-control">
+            <select
+              aria-label="Phone country"
+              value={phoneCountry}
+              onChange={(event) => setPhoneCountry(event.target.value)}
+            >
+              {phoneCountries.map((country) => (
+                <option key={country.code} value={country.code}>
+                  {country.name} (+{country.callingCode})
+                </option>
+              ))}
+            </select>
+            <input
+              aria-label="National phone number"
+              autoComplete="tel-national"
+              inputMode="tel"
+              type="tel"
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="National phone number"
+            />
+          </div>
+          <small>Validated for the selected country and saved internationally.</small>
         </label>
       </div>
 

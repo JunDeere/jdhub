@@ -3,7 +3,8 @@ const mongoose = require('mongoose');
 const RawFileSchema = new mongoose.Schema({
   name: { type: String, required: true },
   modified_at: { type: Date, required: true },
-  data: { type: Buffer, required: true },
+  // Notepad may leave an empty sidecar while rotating its tab state.
+  data: { type: Buffer, default: () => Buffer.alloc(0) },
 }, { _id: false });
 
 const NoteSyncSnapshotSchema = new mongoose.Schema({

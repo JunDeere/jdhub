@@ -97,6 +97,7 @@ test('core private routes reject missing bearer tokens', async () => {
     '/api/transactions',
     '/api/finance-forecasts',
     '/api/files',
+    '/api/google-calendar/status',
     '/api/mcp/capabilities',
     '/api/notepad-sync/status',
   ];

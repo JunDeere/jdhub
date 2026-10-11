@@ -34,6 +34,11 @@ services:
       - FILE_TOTAL_QUOTA_GB=${FILE_TOTAL_QUOTA_GB:-300}
       - FILE_USER_QUOTA_GB=${FILE_USER_QUOTA_GB:-10}
       - PUBLIC_SHARE_ORIGIN=${PUBLIC_SHARE_ORIGIN:-http://localhost:5173}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:3001/api/google-calendar/callback}
+      - GOOGLE_TOKEN_ENCRYPTION_KEY=${GOOGLE_TOKEN_ENCRYPTION_KEY:-}
+      - APP_PUBLIC_ORIGIN=${APP_PUBLIC_ORIGIN:-http://localhost:5173}
     volumes:
       - ${FILE_STORAGE_PATH:-./jdhub-cloud}:/data/jdhub-files
     depends_on:
