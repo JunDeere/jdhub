@@ -23,6 +23,7 @@ import {
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from 'libphonenumber-js/min';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import CommandCenter from './pages/CommandCenter.jsx';
+import GoogleCalendarSettings from './components/GoogleCalendarSettings.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Diary from './pages/Diary.jsx';
@@ -47,10 +48,11 @@ const THEME_KEY = 'jdhubTheme';
 const SIDEBAR_KEY = 'jdhubSidebarCollapsed';
 const ASSISTANT_WIDTH_KEY = 'jdhubAssistantWidth';
 const PORTFOLIO_DEMO_PAGE_IDS = new Set(['dashboard', 'projects', 'tasks', 'scheduling', 'knowledge-base']);
+const DIRECT_HASH_PAGE_IDS = new Set([...PORTFOLIO_DEMO_PAGE_IDS, 'settings']);
 
 function initialActivePage() {
   const requested = window.location.hash.slice(1);
-  return PORTFOLIO_DEMO_PAGE_IDS.has(requested) ? requested : 'dashboard';
+  return DIRECT_HASH_PAGE_IDS.has(requested) ? requested : 'dashboard';
 }
 
 const navIcons = {
@@ -419,14 +421,14 @@ function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUser
     <section className="module-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">System preferences</p>
+          <p className="eyebrow">Account preferences</p>
           <h2>Settings</h2>
         </div>
-        <span className="status-pill">Local only</span>
+        <span className="status-pill">Account</span>
       </div>
 
       <p className="module-description">
-        Settings will eventually control profile, categories, tags, privacy, backups, and integration settings. Appearance is safe to add now because it does not affect data model or integrations.
+        Manage your profile, connected accounts, and display preferences in one place.
       </p>
 
       <div className="panel">
@@ -436,6 +438,10 @@ function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUser
           user={user}
           onUserChange={onUserChange}
         />
+      </div>
+
+      <div className="panel">
+        <GoogleCalendarSettings token={token} user={user} />
       </div>
 
       <div className="panel">
@@ -605,7 +611,7 @@ function PrivateApp() {
     setPageHistory((current) => (pageId === previousPage ? current : [...current, previousPage].slice(-20)));
     activePageRef.current = pageId;
     setActivePage(pageId);
-    if (PORTFOLIO_DEMO_PAGE_IDS.has(pageId)) {
+    if (DIRECT_HASH_PAGE_IDS.has(pageId)) {
       const url = new URL(window.location.href);
       url.hash = pageId === 'dashboard' ? '' : pageId;
       window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
@@ -643,7 +649,7 @@ function PrivateApp() {
       const previousPage = current[current.length - 1] || 'dashboard';
       activePageRef.current = previousPage;
       setActivePage(previousPage);
-      if (PORTFOLIO_DEMO_PAGE_IDS.has(previousPage)) {
+      if (DIRECT_HASH_PAGE_IDS.has(previousPage)) {
         const url = new URL(window.location.href);
         url.hash = previousPage === 'dashboard' ? '' : previousPage;
         window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
@@ -737,7 +743,7 @@ function PrivateApp() {
       : activePage === 'finance'
         ? <Finance token={token} refreshKey={moduleRefreshKey} onTransactionsChanged={handleDataChanged} />
       : activePage === 'scheduling'
-        ? <Scheduling token={token} refreshKey={moduleRefreshKey} onScheduleChanged={handleDataChanged} />
+        ? <Scheduling token={token} refreshKey={moduleRefreshKey} onScheduleChanged={handleDataChanged} onManageGoogleAccounts={() => navigateToPage('settings')} />
       : activePage === 'projects'
         ? <Projects token={token} refreshKey={moduleRefreshKey} onProjectsChanged={handleDataChanged} />
       : activePage === 'knowledge-base'

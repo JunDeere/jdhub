@@ -1,4 +1,4 @@
-import { CalendarPlus, ChevronLeft, ChevronRight, Cloud, Edit3, Plus, RefreshCw, Trash2, Unplug, X } from 'lucide-react';
+import { CalendarPlus, ChevronLeft, ChevronRight, Cloud, Edit3, RefreshCw, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   createScheduleItem,
@@ -7,11 +7,9 @@ import {
   updateScheduleItem,
 } from '../api/schedule.js';
 import {
-  disconnectGoogleCalendar,
   getGoogleCalendarStatus,
   importGoogleCalendar,
   pushScheduleToGoogle,
-  startGoogleCalendarConnection,
 } from '../api/googleCalendar.js';
 import StatusToast from '../components/StatusToast.jsx';
 import {
@@ -28,6 +26,8 @@ const emptyForm = {
   end_at: '',
   location: '',
   status: 'scheduled',
+  recurrence_frequency: 'none',
+  recurrence_until: '',
 };
 
 function dateKey(value) {
@@ -71,6 +71,15 @@ function buildCalendarDays(monthDate) {
   });
 }
 
+function scheduleRange(monthDate) {
+  const days = buildCalendarDays(monthDate);
+  const from = new Date(days[0].date);
+  from.setHours(0, 0, 0, 0);
+  const to = new Date(days[days.length - 1].date);
+  to.setHours(23, 59, 59, 999);
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
 function formForDate(key) {
   const date = dateFromKey(key);
   date.setHours(9, 0, 0, 0);
@@ -84,7 +93,7 @@ function formForDate(key) {
   };
 }
 
-export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
+export default function Scheduling({ token, refreshKey, onScheduleChanged, onManageGoogleAccounts }) {
   const todayKey = dateKey(new Date());
   const [scheduleItems, setScheduleItems] = useState([]);
   const [selectedDate, setSelectedDate] = useState(todayKey);
@@ -102,11 +111,11 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
   const [selectedGoogleAccountId, setSelectedGoogleAccountId] = useState('');
   const [googleBusy, setGoogleBusy] = useState('');
 
-  const loadSchedule = async () => {
+  const loadSchedule = async (monthDate = visibleMonth) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getSchedule(token);
+      const data = await getSchedule(token, scheduleRange(monthDate));
       setScheduleItems(data.scheduleItems);
     } catch (err) {
       setError(err.message);
@@ -127,7 +136,7 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
   useEffect(() => {
     let cancelled = false;
 
-    getSchedule(token)
+    getSchedule(token, scheduleRange(visibleMonth))
       .then((data) => {
         if (!cancelled) setScheduleItems(data.scheduleItems);
       })
@@ -141,11 +150,10 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
     return () => {
       cancelled = true;
     };
-  }, [token, refreshKey]);
+  }, [token, refreshKey, visibleMonth]);
 
   useEffect(() => {
     let cancelled = false;
-    let feedbackTimer;
     getGoogleCalendarStatus(token)
       .then((data) => {
         if (!cancelled) {
@@ -157,40 +165,10 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
       })
       .catch((err) => { if (!cancelled) setError(err.message); });
 
-    const url = new URL(window.location.href);
-    const result = url.searchParams.get('google_calendar');
-    if (result) {
-      const messages = {
-        connected: 'Google Calendar connected.',
-        denied: 'Google Calendar access was cancelled.',
-        failed: 'Google Calendar could not be connected.',
-        not_configured: 'Google Calendar is not configured on this server.',
-      };
-      feedbackTimer = window.setTimeout(() => {
-        if (result === 'connected') setStatusMessage(messages[result]);
-        else setError(messages[result] || 'Google Calendar connection failed.');
-      }, 0);
-      url.searchParams.delete('google_calendar');
-      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-    }
-
     return () => {
       cancelled = true;
-      if (feedbackTimer) window.clearTimeout(feedbackTimer);
     };
   }, [token]);
-
-  const connectGoogle = async () => {
-    setGoogleBusy('connect');
-    setError(null);
-    try {
-      const data = await startGoogleCalendarConnection(token);
-      window.location.assign(data.authorizationUrl);
-    } catch (err) {
-      setError(err.message);
-      setGoogleBusy('');
-    }
-  };
 
   const importFromGoogle = async () => {
     if (!selectedGoogleAccountId) return;
@@ -249,23 +227,6 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
     }
   };
 
-  const disconnectGoogle = async () => {
-    const selectedAccount = googleStatus.accounts?.find((account) => account.id === selectedGoogleAccountId);
-    if (!selectedAccount) return;
-    if (!window.confirm(`Disconnect ${selectedAccount.accountEmail} from JDHub? Existing events in either calendar will not be deleted.`)) return;
-    setGoogleBusy('disconnect');
-    setError(null);
-    try {
-      await disconnectGoogleCalendar(token, selectedGoogleAccountId);
-      await loadGoogleStatus();
-      setStatusMessage(`${selectedAccount.accountEmail} disconnected.`);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setGoogleBusy('');
-    }
-  };
-
   const itemsByDate = useMemo(() => scheduleItems.reduce((groups, item) => {
     const key = dateKey(item.start_at);
     return { ...groups, [key]: [...(groups[key] || []), item] };
@@ -299,7 +260,16 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
       end_at: toLocalDateTimeInput(item.end_at),
       location: item.location || '',
       status: item.status || 'scheduled',
+      recurrence_frequency: item.recurrence_frequency || 'none',
+      recurrence_until: item.recurrence_until ? dateKey(item.recurrence_until) : '',
     });
+    if (item.is_recurring_occurrence) {
+      setForm((current) => ({
+        ...current,
+        start_at: toLocalDateTimeInput(item.series_start_at),
+        end_at: toLocalDateTimeInput(item.series_end_at),
+      }));
+    }
     setFieldErrors({});
     setStatusMessage(null);
     setError(null);
@@ -327,6 +297,10 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
       title: requiredText(form.title, 'Schedule title'),
       start_at: requiredText(form.start_at, 'Start time'),
       end_at: dateOrder(form.start_at, form.end_at, 'End time'),
+      recurrence_until: form.recurrence_frequency !== 'none' && form.recurrence_until
+        && form.recurrence_until < form.start_at.slice(0, 10)
+        ? 'Recurrence end date cannot be before the start date.'
+        : '',
     };
 
     if (hasValidationErrors(nextFieldErrors)) {
@@ -340,6 +314,9 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
         ...form,
         start_at: localDateTimeInputToUtcIso(form.start_at),
         end_at: localDateTimeInputToUtcIso(form.end_at),
+        recurrence_until: form.recurrence_frequency !== 'none' && form.recurrence_until
+          ? localDateTimeInputToUtcIso(`${form.recurrence_until}T23:59`)
+          : null,
       };
 
       const result = editingId
@@ -352,7 +329,7 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
       setVisibleMonth(dateFromKey(nextSelectedDate));
       closeModal();
       setStatusMessage(editingId ? 'Schedule item updated.' : 'Schedule item saved.');
-      await loadSchedule();
+      await loadSchedule(dateFromKey(nextSelectedDate));
       onScheduleChanged?.();
     } catch (err) {
       setError(err.message);
@@ -363,6 +340,8 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
 
   const handleDelete = async () => {
     if (!editingId) return;
+    if (form.recurrence_frequency !== 'none'
+      && !window.confirm('Delete this entire recurring schedule? All of its occurrences will disappear from JDHub.')) return;
     setDeleting(true);
     setError(null);
     setStatusMessage(null);
@@ -404,7 +383,9 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
                 <span>Google account</span>
                 <select value={selectedGoogleAccountId} onChange={(event) => setSelectedGoogleAccountId(event.target.value)}>
                   {googleAccounts.map((account) => (
-                    <option key={account.id} value={account.id}>{account.accountEmail}</option>
+                    <option key={account.id} value={account.id}>
+                      {account.accountEmail}{account.isPrimary ? ' (Main)' : ''}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -422,18 +403,11 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
                 <Cloud size={16} />
                 {googleBusy === 'push' ? 'Syncing...' : 'Push JDHub to Google'}
               </button>
-              <button aria-label="Disconnect Google Calendar" className="icon-only-button" disabled={Boolean(googleBusy)} onClick={disconnectGoogle} title="Disconnect Google Calendar" type="button">
-                <Unplug size={17} />
-              </button>
-              <button className="secondary-button" disabled={Boolean(googleBusy)} onClick={connectGoogle} type="button">
-                <Plus size={16} />
-                Add account
-              </button>
             </>
           ) : (
-            <button className="primary-button" disabled={googleStatus.configured === false || Boolean(googleBusy)} onClick={connectGoogle} type="button">
-              <Cloud size={16} />
-              {googleBusy === 'connect' ? 'Opening Google...' : 'Connect Google Calendar'}
+            <button className="primary-button" onClick={onManageGoogleAccounts} type="button">
+              <SlidersHorizontal size={16} />
+              Manage in Settings
             </button>
           )}
         </div>
@@ -498,10 +472,13 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
           {selectedItems.length ? (
             <div className="schedule-agenda">
               {selectedItems.map((item) => (
-                <article className="schedule-agenda-item" key={item._id}>
+                <article className="schedule-agenda-item" key={item.occurrence_key || item._id}>
                   <div>
                     <span>{item.all_day ? 'All day' : `${timeLabel(item.start_at)}${item.end_at ? ` - ${timeLabel(item.end_at)}` : ''}`}</span>
                     <strong>{item.title}</strong>
+                    {item.recurrence_frequency && item.recurrence_frequency !== 'none' && (
+                      <small className="schedule-recurrence-label">Repeats {item.recurrence_frequency}</small>
+                    )}
                     {item.external_provider === 'google' && (
                       <small className="google-event-label">
                         Google Calendar{item.google_calendar_links?.length > 1
@@ -514,7 +491,7 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
                   </div>
                   <button className="secondary-button" onClick={() => openEditModal(item)} type="button">
                     <Edit3 size={16} />
-                    Edit
+                    {item.recurrence_frequency !== 'none' ? 'Edit series' : 'Edit'}
                   </button>
                 </article>
               ))}
@@ -533,8 +510,8 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
           <form aria-labelledby="schedule-modal-title" aria-modal="true" className="modal-card schedule-modal utility-form" noValidate onSubmit={handleSubmit} role="dialog">
             <div className="modal-header">
               <div>
-                <p className="eyebrow">{editingId ? 'Edit schedule' : 'Add schedule'}</p>
-                <h3 id="schedule-modal-title">{editingId ? 'Edit Schedule Item' : 'New Schedule Item'}</h3>
+                <p className="eyebrow">{editingId && form.recurrence_frequency !== 'none' ? 'Edit recurring schedule' : editingId ? 'Edit schedule' : 'Add schedule'}</p>
+                <h3 id="schedule-modal-title">{editingId && form.recurrence_frequency !== 'none' ? 'Edit Schedule Series' : editingId ? 'Edit Schedule Item' : 'New Schedule Item'}</h3>
               </div>
               <button aria-label="Close schedule modal" className="icon-only-button" onClick={closeModal} type="button">
                 <X size={18} />
@@ -573,6 +550,28 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
                   {['scheduled', 'done', 'cancelled'].map((status) => <option key={status} value={status}>{status}</option>)}
                 </select>
               </label>
+              <label>
+                Repeats
+                <select value={form.recurrence_frequency} onChange={(event) => updateForm('recurrence_frequency', event.target.value)}>
+                  <option value="none">Does not repeat</option>
+                  <option value="weekly">Every week</option>
+                  <option value="monthly">Every month</option>
+                  <option value="yearly">Every year</option>
+                </select>
+              </label>
+              {form.recurrence_frequency !== 'none' && (
+                <label>
+                  Repeat until <span className="muted">(optional)</span>
+                  <input
+                    className={fieldErrors.recurrence_until ? 'field-invalid' : ''}
+                    min={form.start_at ? form.start_at.slice(0, 10) : undefined}
+                    type="date"
+                    value={form.recurrence_until}
+                    onChange={(event) => updateForm('recurrence_until', event.target.value)}
+                  />
+                  {fieldErrors.recurrence_until && <span className="field-error">{fieldErrors.recurrence_until}</span>}
+                </label>
+              )}
             </div>
 
             {error && <div className="alert-error">{error}</div>}
@@ -581,7 +580,7 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged }) {
               {editingId && (
                 <button className="danger-button" disabled={deleting || saving} onClick={handleDelete} type="button">
                   <Trash2 size={16} />
-                  {deleting ? 'Deleting...' : 'Delete'}
+                  {deleting ? 'Deleting...' : form.recurrence_frequency !== 'none' ? 'Delete series' : 'Delete'}
                 </button>
               )}
               <button className="secondary-button" onClick={closeModal} type="button">Cancel</button>

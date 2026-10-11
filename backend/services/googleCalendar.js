@@ -197,7 +197,7 @@ function googleEventTimes(event) {
 function scheduleEventBody(item) {
   const start = new Date(item.start_at);
   const end = item.end_at ? new Date(item.end_at) : new Date(start.getTime() + 60 * 60 * 1000);
-  return {
+  const body = {
     summary: item.title,
     description: item.description || undefined,
     location: item.location || undefined,
@@ -205,6 +205,17 @@ function scheduleEventBody(item) {
     end: { dateTime: end.toISOString() },
     extendedProperties: { private: { jdhubScheduleId: String(item._id) } },
   };
+  const recurrenceNames = { weekly: 'WEEKLY', monthly: 'MONTHLY', yearly: 'YEARLY' };
+  const frequency = recurrenceNames[item.recurrence_frequency];
+  if (frequency) {
+    let rule = `RRULE:FREQ=${frequency}`;
+    if (item.recurrence_until) {
+      const until = new Date(item.recurrence_until).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+      rule += `;UNTIL=${until}`;
+    }
+    body.recurrence = [rule];
+  }
+  return body;
 }
 
 module.exports = {

@@ -15,6 +15,13 @@ const ScheduleItemSchema = new mongoose.Schema({
   start_at: { type: Date, required: true, index: true },
   end_at: { type: Date },
   all_day: { type: Boolean, default: false },
+  recurrence_frequency: {
+    type: String,
+    enum: ['none', 'weekly', 'monthly', 'yearly'],
+    default: 'none',
+    index: true,
+  },
+  recurrence_until: { type: Date },
   location: { type: String, trim: true },
   status: {
     type: String,

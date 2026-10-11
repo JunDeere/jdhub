@@ -202,11 +202,17 @@ APP_PUBLIC_ORIGIN=https://jdhub.jdeere.net
 
 Keep the client secret and token-encryption key out of Git. If the Google OAuth
 app is in Testing mode, add every Google address that will be connected as a test
-user. One JDHub user can connect multiple Google accounts. Scheduling can import
+user. Google accounts are connected and removed in Settings, where the connected
+address matching the JDHub profile email is automatically marked as the main
+account. One JDHub user can connect multiple Google accounts. Scheduling can import
 one selected account or all connected accounts into the combined JDHub calendar.
 After an explicit confirmation, JDHub items can be created or updated in the
 selected Google account. Disconnecting one account removes only its stored OAuth
 credentials and does not delete events.
+
+JDHub schedule items can optionally repeat weekly, monthly, or yearly, with or
+without an end date. Calendar views expand those occurrences without duplicating
+database records, and Google exports use native recurring-event rules.
 
 Production Compose disables new account registration by default. Existing users
 can still sign in; set `ALLOW_REGISTRATION=true` only during a controlled account

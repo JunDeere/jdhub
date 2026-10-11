@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const authMiddleware = require('../middleware/auth');
 const GoogleCalendarConnection = require('../models/GoogleCalendarConnection');
 const ScheduleItem = require('../models/ScheduleItem');
+const User = require('../models/User');
 const {
   authorizationUrl,
   authorizedConnection,
@@ -22,7 +23,7 @@ const router = express.Router();
 
 function frontendRedirect(status) {
   const origin = String(process.env.APP_PUBLIC_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
-  return `${origin}/?google_calendar=${encodeURIComponent(status)}#scheduling`;
+  return `${origin}/?google_calendar=${encodeURIComponent(status)}#settings`;
 }
 
 function routeError(res, error) {
@@ -34,7 +35,7 @@ function requestedConnectionId(req) {
   return typeof req.body?.connectionId === 'string' ? req.body.connectionId.trim() : '';
 }
 
-function publicAccount(account) {
+function publicAccount(account, primaryEmail) {
   return {
     id: String(account._id),
     accountEmail: account.account_email,
@@ -42,6 +43,7 @@ function publicAccount(account) {
     connectedAt: account.connected_at,
     lastSyncedAt: account.last_synced_at || null,
     lastError: account.last_error || '',
+    isPrimary: account.account_email === primaryEmail,
   };
 }
 
@@ -128,13 +130,17 @@ router.get('/status', async (req, res) => {
     const connection = await GoogleCalendarConnection.findOne({ user_id: req.userId })
       .select('+token_blob +accounts.token_blob');
     if (migrateLegacyAccount(connection)) await connection.save();
+    const user = await User.findById(req.userId).select('email');
+    const primaryEmail = String(user?.email || '').trim().toLowerCase();
     const accounts = (connection?.accounts || [])
-      .map(publicAccount)
-      .sort((left, right) => new Date(right.connectedAt || 0) - new Date(left.connectedAt || 0));
+      .map((account) => publicAccount(account, primaryEmail))
+      .sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary)
+        || new Date(right.connectedAt || 0) - new Date(left.connectedAt || 0));
     res.json({
       configured: isGoogleConfigured(),
       connected: accounts.length > 0,
       accounts,
+      primaryEmail,
       accountEmail: accounts[0]?.accountEmail || null,
       lastSyncedAt: accounts[0]?.lastSyncedAt || null,
     });
@@ -247,21 +253,36 @@ router.post('/push', async (req, res) => {
     const connectionId = requestedConnectionId(req);
     if (!connectionId) return res.status(400).json({ error: 'Google account is required' });
     const { connection, accessToken } = await authorizedConnection(req.userId, connectionId);
+    const syncCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const items = await ScheduleItem.find({
       user_id: req.userId,
       status: { $ne: 'cancelled' },
       sync_source: { $ne: 'google' },
-      start_at: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      $or: [
+        { start_at: { $gte: syncCutoff } },
+        {
+          recurrence_frequency: { $in: ['weekly', 'monthly', 'yearly'] },
+          $or: [
+            { recurrence_until: { $gte: syncCutoff } },
+            { recurrence_until: { $exists: false } },
+            { recurrence_until: null },
+          ],
+        },
+      ],
     }).sort({ start_at: 1 }).limit(500);
     let created = 0;
     let updated = 0;
 
     for (const item of items) {
-      const body = JSON.stringify(scheduleEventBody(item));
       let event;
       const existingLink = item.google_calendar_links.find(
         (entry) => String(entry.connection_id) === String(connection._id),
       );
+      const eventBody = scheduleEventBody(item);
+      if (existingLink?.event_id && (!item.recurrence_frequency || item.recurrence_frequency === 'none')) {
+        eventBody.recurrence = [];
+      }
+      const body = JSON.stringify(eventBody);
       if (existingLink?.event_id) {
         event = await calendarRequest(
           accessToken,

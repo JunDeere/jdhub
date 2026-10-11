@@ -13,8 +13,11 @@ function authHeaders(token) {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }
 
-export async function getSchedule(token) {
-  const response = await fetch(`${API_BASE}/api/schedule?past=true&limit=150`, {
+export async function getSchedule(token, { from, to } = {}) {
+  const query = new URLSearchParams({ past: 'true', limit: '500' });
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  const response = await fetch(`${API_BASE}/api/schedule?${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseJson(response);

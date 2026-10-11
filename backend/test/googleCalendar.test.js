@@ -84,3 +84,15 @@ test('maps a JDHub schedule item to a Google event body', () => {
   assert.equal(body.start.dateTime, '2026-10-11T01:00:00.000Z');
   assert.equal(body.extendedProperties.private.jdhubScheduleId, 'schedule-1');
 });
+
+test('maps recurring JDHub items to Google recurrence rules', () => {
+  const body = scheduleEventBody({
+    _id: 'schedule-2',
+    title: 'Weekly review',
+    start_at: '2026-10-11T01:00:00.000Z',
+    end_at: '2026-10-11T02:00:00.000Z',
+    recurrence_frequency: 'weekly',
+    recurrence_until: '2026-12-31T15:59:00.000Z',
+  });
+  assert.deepEqual(body.recurrence, ['RRULE:FREQ=WEEKLY;UNTIL=20261231T155900Z']);
+});

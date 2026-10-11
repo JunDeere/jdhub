@@ -33,6 +33,7 @@ const ServerRecord = require('./models/ServerRecord');
 const IntegrationRecord = require('./models/IntegrationRecord');
 const FileItem = require('./models/FileItem');
 const { syncSiteRoles } = require('./services/siteRoles');
+const { nextScheduleOccurrence } = require('./utils/scheduleRecurrence');
 
 const app = express();
 app.set('trust proxy', Number(process.env.TRUST_PROXY || 0));
@@ -139,13 +140,29 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
     })
       .sort({ remind_at: 1 })
       .limit(5);
-    const upcomingSchedule = await ScheduleItem.find({
+    const scheduleCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const scheduleCandidates = await ScheduleItem.find({
       user_id: req.userId,
       status: { $nin: ['done', 'cancelled'] },
-      start_at: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      $or: [
+        { start_at: { $gte: scheduleCutoff } },
+        {
+          recurrence_frequency: { $in: ['weekly', 'monthly', 'yearly'] },
+          $or: [
+            { recurrence_until: { $gte: scheduleCutoff } },
+            { recurrence_until: { $exists: false } },
+            { recurrence_until: null },
+          ],
+        },
+      ],
     })
       .sort({ start_at: 1 })
-      .limit(100);
+      .limit(300);
+    const upcomingSchedule = scheduleCandidates
+      .map((item) => nextScheduleOccurrence(item, scheduleCutoff))
+      .filter(Boolean)
+      .sort((left, right) => new Date(left.start_at) - new Date(right.start_at))
+      .slice(0, 100);
 
     res.json({
       message: 'Protected dashboard data',
