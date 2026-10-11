@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const authMiddleware = require('../middleware/auth');
 const { moveFinancingPayment } = require('../services/financingPayments');
+const { releaseForecastMatch } = require('../services/financeForecastResolver');
 const { nowUtc, parseOptionalUtcDate, utcMonthRange } = require('../utils/dateTime');
 
 const router = express.Router();
@@ -140,12 +141,41 @@ router.patch('/:id', async (req, res) => {
 
     Object.assign(transaction, payload);
     await transaction.save();
+    await releaseForecastMatch(req.userId, transaction._id);
 
     const summary = await getMonthlySummary(req.userId, payload.date);
     res.json({ transaction, summary });
   } catch (error) {
     if (financingAdjusted) {
       await moveFinancingPayment(req.userId, nextPayment, previousPayment).catch(() => {});
+    }
+    res.status(error.status || 500).json({ error: error.message });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  let previousPayment = null;
+  let financingAdjusted = false;
+  try {
+    const transaction = await Transaction.findOne({ _id: req.params.id, user_id: req.userId });
+    if (!transaction) return res.status(404).json({ error: 'Transaction not found' });
+
+    previousPayment = transaction.type === 'expense' && transaction.financing_item_id ? {
+      financingItemId: transaction.financing_item_id,
+      amount: transaction.amount,
+    } : null;
+    if (previousPayment) {
+      await moveFinancingPayment(req.userId, previousPayment, null);
+      financingAdjusted = true;
+    }
+
+    await releaseForecastMatch(req.userId, transaction._id);
+    await transaction.deleteOne();
+    const summary = await getMonthlySummary(req.userId, transaction.date);
+    res.json({ deleted_id: transaction._id, summary });
+  } catch (error) {
+    if (financingAdjusted) {
+      await moveFinancingPayment(req.userId, null, previousPayment).catch(() => {});
     }
     res.status(error.status || 500).json({ error: error.message });
   }

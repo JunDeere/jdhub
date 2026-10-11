@@ -36,6 +36,7 @@ const FinanceForecastSchema = new mongoose.Schema({
   currency: { type: String, default: 'PHP', trim: true },
   as_of_date: { type: Date, required: true, index: true },
   starting_balance: { type: Number, required: true },
+  cash_anchor_at: { type: Date, index: true },
   items: { type: [ForecastItemSchema], default: [] },
   financing: { type: [FinancingItemSchema], default: [] },
   archived_at: { type: Date },

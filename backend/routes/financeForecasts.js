@@ -2,6 +2,7 @@ const express = require('express');
 const FinanceForecast = require('../models/FinanceForecast');
 const authMiddleware = require('../middleware/auth');
 const { resolveForecastMatches, serializeForecast } = require('../services/financeForecastResolver');
+const { getCashPosition } = require('../services/financeCashLedger');
 const { parseOptionalUtcDate, parseRequiredUtcDate } = require('../utils/dateTime');
 
 const router = express.Router();
@@ -90,6 +91,12 @@ async function ownedForecast(req) {
   });
 }
 
+async function presentForecast(forecast, userId) {
+  if (!forecast) return null;
+  const cash = await getCashPosition(forecast, userId);
+  return serializeForecast(forecast, new Date(), cash);
+}
+
 router.get('/', async (req, res) => {
   try {
     const forecast = await FinanceForecast.findOne({
@@ -99,7 +106,7 @@ router.get('/', async (req, res) => {
 
     if (forecast) await resolveForecastMatches(forecast, req.userId);
 
-    res.json({ forecast: serializeForecast(forecast) });
+    res.json({ forecast: await presentForecast(forecast, req.userId) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -109,8 +116,12 @@ router.post('/', async (req, res) => {
   try {
     const existing = await FinanceForecast.exists({ user_id: req.userId, archived_at: { $exists: false } });
     if (existing) return res.status(409).json({ error: 'An active forecast already exists' });
-    const forecast = await FinanceForecast.create({ ...forecastPayload(req.body), user_id: req.userId });
-    res.status(201).json({ forecast: serializeForecast(forecast) });
+    const forecast = await FinanceForecast.create({
+      ...forecastPayload(req.body),
+      user_id: req.userId,
+      cash_anchor_at: new Date(),
+    });
+    res.status(201).json({ forecast: await presentForecast(forecast, req.userId) });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
   }
@@ -121,8 +132,11 @@ router.patch('/:forecastId', async (req, res) => {
     const forecast = await ownedForecast(req);
     if (!forecast) return res.status(404).json({ error: 'Forecast not found' });
     Object.assign(forecast, forecastPayload(req.body));
+    // Reconciling current cash creates a fresh baseline. Transactions recorded
+    // after this point move the live balance automatically.
+    forecast.cash_anchor_at = new Date();
     await forecast.save();
-    res.json({ forecast: serializeForecast(forecast) });
+    res.json({ forecast: await presentForecast(forecast, req.userId) });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
   }
@@ -134,7 +148,7 @@ router.post('/:forecastId/items', async (req, res) => {
     if (!forecast) return res.status(404).json({ error: 'Forecast not found' });
     forecast.items.push(forecastItemPayload(req.body));
     await forecast.save();
-    res.status(201).json({ forecast: serializeForecast(forecast) });
+    res.status(201).json({ forecast: await presentForecast(forecast, req.userId) });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
   }
@@ -159,7 +173,7 @@ router.patch('/:forecastId/items/:itemId', async (req, res) => {
     item.resolved_by = req.body.status === 'completed' ? 'manual' : undefined;
     item.matched_transaction_id = undefined;
     await forecast.save();
-    res.json({ forecast: serializeForecast(forecast) });
+    res.json({ forecast: await presentForecast(forecast, req.userId) });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
   }
@@ -171,7 +185,7 @@ router.post('/:forecastId/financing', async (req, res) => {
     if (!forecast) return res.status(404).json({ error: 'Forecast not found' });
     forecast.financing.push(financingPayload(req.body));
     await forecast.save();
-    res.status(201).json({ forecast: serializeForecast(forecast) });
+    res.status(201).json({ forecast: await presentForecast(forecast, req.userId) });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
   }
@@ -185,7 +199,7 @@ router.patch('/:forecastId/financing/:itemId', async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Financing account not found' });
     Object.assign(item, financingPayload(req.body));
     await forecast.save();
-    res.json({ forecast: serializeForecast(forecast) });
+    res.json({ forecast: await presentForecast(forecast, req.userId) });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message });
   }

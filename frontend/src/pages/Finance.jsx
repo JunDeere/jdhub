@@ -6,7 +6,7 @@ import {
   saveForecastItem,
   updateForecastItemStatus,
 } from '../api/financeForecasts.js';
-import { createTransaction, getTransactions, updateTransaction } from '../api/transactions.js';
+import { createTransaction, deleteTransaction, getTransactions, updateTransaction } from '../api/transactions.js';
 import StatusToast from '../components/StatusToast.jsx';
 import { dateInputToUtcIso, formatLocalDate, toUtcDateInput } from '../utils/dateTime.js';
 import { exactLength, hasValidationErrors, positiveNumber, requiredText } from '../utils/formValidation.js';
@@ -66,9 +66,9 @@ function forecastDateLabel(startValue, endValue) {
   return `${format(startValue)}–${format(endValue)}`;
 }
 
-function resolutionLabel(status) {
+function resolutionLabel(status, resolvedBy) {
+  if (status === 'completed') return resolvedBy === 'transaction' ? 'Recorded' : 'Handled';
   return {
-    completed: 'Resolved',
     overdue: 'Needs review',
     due_today: 'Due today',
     upcoming: 'Upcoming',
@@ -83,6 +83,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [statusMessage, setStatusMessage] = useState(null);
@@ -91,6 +92,9 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [forecastError, setForecastError] = useState(null);
   const [updatingForecastItem, setUpdatingForecastItem] = useState(null);
   const [activeView, setActiveView] = useState('overview');
+  const [transactionSearch, setTransactionSearch] = useState('');
+  const [transactionType, setTransactionType] = useState('all');
+  const [transactionCategory, setTransactionCategory] = useState('all');
   const [financingSearch, setFinancingSearch] = useState('');
   const [financingProvider, setFinancingProvider] = useState('all');
   const [financingDueDay, setFinancingDueDay] = useState('all');
@@ -103,6 +107,27 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
     [...new Set((forecast?.financing || []).map((item) => item.provider || 'Financing'))]
       .sort((left, right) => left.localeCompare(right))
   ), [forecast]);
+
+  const transactionCategories = useMemo(() => (
+    [...new Set(transactions.map((item) => item.category).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right))
+  ), [transactions]);
+
+  const filteredTransactions = useMemo(() => {
+    const query = transactionSearch.trim().toLowerCase();
+    return transactions.filter((transaction) => {
+      const searchable = [
+        transaction.merchant_or_source,
+        transaction.note,
+        transaction.category,
+        transaction.payment_method,
+        ...(transaction.tags || []),
+      ].filter(Boolean).join(' ').toLowerCase();
+      return (!query || searchable.includes(query))
+        && (transactionType === 'all' || transaction.type === transactionType)
+        && (transactionCategory === 'all' || transaction.category === transactionCategory);
+    });
+  }, [transactionCategory, transactionSearch, transactionType, transactions]);
 
   const financingDueDays = useMemo(() => (
     [...new Set((forecast?.financing || []).map((item) => item.due_day).filter(Boolean))]
@@ -144,7 +169,8 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
 
   const forecastWindow = useMemo(() => {
     if (!forecast) return null;
-    const start = new Date(forecast.as_of_date);
+    const start = new Date();
+    start.setUTCHours(0, 0, 0, 0);
     const end = new Date(start);
     if (forecastRange === 'week') end.setUTCDate(end.getUTCDate() + 7);
     if (forecastRange === 'month') end.setUTCMonth(end.getUTCMonth() + 1);
@@ -153,8 +179,12 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
 
     const items = forecastRange === 'all'
       ? forecast.items
-      : forecast.items.filter((item) => new Date(item.date_start) <= end);
-    const included = items.filter((item) => item.status !== 'skipped');
+      : forecast.items.filter((item) => {
+        const itemDate = new Date(item.date_start);
+        const unresolvedOverdue = item.status === 'planned' && itemDate < start;
+        return unresolvedOverdue || (itemDate >= start && itemDate <= end);
+      });
+    const included = items.filter((item) => item.status === 'planned');
     const totalIncome = included
       .filter((item) => item.kind === 'income')
       .reduce((total, item) => total + Number(item.amount || 0), 0);
@@ -166,9 +196,8 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
       counts[status] = (counts[status] || 0) + 1;
       return counts;
     }, { completed: 0, overdue: 0, due_today: 0, upcoming: 0, skipped: 0 });
-    const endingBalance = items.length
-      ? items[items.length - 1].projected_balance
-      : forecast.starting_balance;
+    const currentBalance = Number(forecast.cash?.current_balance ?? forecast.starting_balance ?? 0);
+    const endingBalance = currentBalance + totalIncome - totalExpense;
 
     return {
       items,
@@ -301,6 +330,26 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
     setStatusMessage(null);
   };
 
+  const handleDelete = async (transaction) => {
+    const label = transaction.merchant_or_source || transaction.note || 'this transaction';
+    if (!window.confirm(`Delete ${label}? This will also restore any linked financing balance.`)) return;
+
+    setDeletingId(transaction._id);
+    setError(null);
+    setStatusMessage(null);
+    try {
+      await deleteTransaction(token, transaction._id);
+      if (editingId === transaction._id) resetForm();
+      await loadTransactions();
+      onTransactionsChanged?.();
+      setStatusMessage('Transaction deleted. Cash and linked financing were recalculated.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const handleForecastStatus = async (itemId, status) => {
     if (!forecast?._id) return;
     setUpdatingForecastItem(itemId);
@@ -324,8 +373,8 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
         name: forecast?.name || 'Personal cash-flow forecast',
         account_name: forecast?.account_name || 'Available cash',
         currency: forecast?.currency || 'PHP',
-        as_of_date: forecast?.as_of_date ? toUtcDateInput(forecast.as_of_date) : toUtcDateInput(new Date()),
-        starting_balance: forecast?.starting_balance ?? '',
+        as_of_date: toUtcDateInput(new Date()),
+        starting_balance: forecast?.cash?.current_balance ?? forecast?.starting_balance ?? '',
       },
     });
   };
@@ -421,8 +470,8 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
         <section aria-label="Finance dashboard summary" className="finance-dashboard-strip">
           <div className="finance-dashboard-card primary">
             <span>Current cash</span>
-            <strong>{money(forecast.starting_balance, forecast.currency)}</strong>
-            <small>Snapshot {formatLocalDate(forecast.as_of_date)}</small>
+            <strong>{money(forecast.cash?.current_balance ?? forecast.starting_balance, forecast.currency)}</strong>
+            <small>{forecast.cash?.transaction_count || 0} ledger entries since reconciliation</small>
           </div>
           <div className="finance-dashboard-card expense">
             <span>Planned payments</span>
@@ -488,7 +537,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                 <p className="muted">No finance forecast has been added yet.</p>
               ) : (
                 <div className="forecast-summary-grid finance-overview-summary">
-                  <div><span>Current balance</span><strong>{money(forecast.starting_balance, forecast.currency)}</strong></div>
+                  <div><span>Current balance</span><strong>{money(forecast.cash?.current_balance ?? forecast.starting_balance, forecast.currency)}</strong></div>
                   <div><span>Planned income</span><strong className="forecast-income">+{money(forecast.summary.total_income, forecast.currency)}</strong></div>
                   <div><span>Planned payments</span><strong className="forecast-expense">−{money(forecast.summary.total_expense, forecast.currency)}</strong></div>
                   <div><span>Projected balance</span><strong>{money(forecast.summary.ending_balance, forecast.currency)}</strong></div>
@@ -542,12 +591,12 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
             <div>
               <p className="eyebrow">Planned cash flow</p>
               <h3>{forecast?.name || 'Cash-flow Forecast'}</h3>
-              {forecast && <p className="muted">{forecast.account_name} snapshot from {formatLocalDate(forecast.as_of_date)}. Forecast entries do not affect actual transaction totals.</p>}
+              {forecast && <p className="muted">Actual transactions move {forecast.account_name}; unresolved forecast items show what may happen next without double-counting completed items.</p>}
             </div>
                 {forecast && (
                   <div className="finance-heading-actions">
                     <span className="status-pill">{forecastWindow.label}: {money(forecastWindow.endingBalance, forecast.currency)}</span>
-                    <button className="secondary-button" onClick={openForecastEditor} type="button">Edit current cash</button>
+                    <button className="secondary-button" onClick={openForecastEditor} type="button">Reconcile cash</button>
                     <button className="primary-button" onClick={() => openForecastItemEditor()} type="button">Add planned item</button>
                   </div>
                 )}
@@ -577,10 +626,10 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                 <span>{forecastWindow.resolution.overdue || 0} need review</span>
                 <span>{forecastWindow.resolution.due_today || 0} due today</span>
                 <span>{forecastWindow.resolution.upcoming || 0} upcoming</span>
-                <small>Counts and totals reflect the selected {forecastWindow.label.toLowerCase()} window. Exact dated transactions are matched automatically.</small>
+                <small>Exact dated transactions are matched automatically. Marking a plan handled removes it from the projection; only an actual transaction moves current cash.</small>
               </div>
               <div className="forecast-summary-grid">
-                <div><span>Starting balance</span><strong>{money(forecast.starting_balance, forecast.currency)}</strong></div>
+                <div><span>Current cash</span><strong>{money(forecast.cash?.current_balance ?? forecast.starting_balance, forecast.currency)}</strong><small>{money(forecast.cash?.baseline_balance ?? forecast.starting_balance, forecast.currency)} baseline {forecast.cash?.net_change >= 0 ? '+' : '−'} {money(Math.abs(forecast.cash?.net_change || 0), forecast.currency)} ledger</small></div>
                 <div><span>Planned income · {forecastWindow.label}</span><strong className="forecast-income">+{money(forecastWindow.totalIncome, forecast.currency)}</strong></div>
                 <div><span>Planned payments · {forecastWindow.label}</span><strong className="forecast-expense">−{money(forecastWindow.totalExpense, forecast.currency)}</strong></div>
                 <div><span>Projected cash · {forecastWindow.label}</span><strong>{money(forecastWindow.endingBalance, forecast.currency)}</strong></div>
@@ -591,7 +640,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                   <thead><tr><th>Date</th><th>Planned item</th><th>Amount</th><th>Projected cash</th><th>Status & action</th></tr></thead>
                   <tbody>
                     <tr className="forecast-start-row">
-                      <td data-label="Date">Now</td><td data-label="Transaction">Current {forecast.account_name}</td><td data-label="Amount">—</td><td data-label="Projected balance">{money(forecast.starting_balance, forecast.currency)}</td><td data-label="Status">Snapshot</td>
+                      <td data-label="Date">Now</td><td data-label="Transaction">Current {forecast.account_name}</td><td data-label="Amount">—</td><td data-label="Projected balance">{money(forecast.cash?.current_balance ?? forecast.starting_balance, forecast.currency)}</td><td data-label="Status">Live ledger</td>
                     </tr>
                     {forecastWindow.items.map((item) => (
                       <tr className={`${item.kind} ${item.resolution_status}`} key={item._id}>
@@ -600,10 +649,10 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                         <td data-label="Amount">{item.kind === 'income' ? '+' : '−'}{money(item.amount, forecast.currency)}</td>
                         <td data-label="Projected balance">{money(item.projected_balance, forecast.currency)}</td>
                         <td data-label="Status">
-                          <span className={`forecast-resolution-badge ${item.resolution_status}`}>{resolutionLabel(item.resolution_status)}</span>
+                          <span className={`forecast-resolution-badge ${item.resolution_status}`}>{resolutionLabel(item.resolution_status, item.resolved_by)}</span>
                           <select aria-label={`Status for ${item.label}`} disabled={updatingForecastItem === item._id} onChange={(event) => handleForecastStatus(item._id, event.target.value)} value={item.status}>
                             <option value="planned">Planned</option>
-                            <option value="completed">Completed</option>
+                            <option value="completed">Handled (no cash entry)</option>
                             <option value="skipped">Skipped</option>
                           </select>
                           <button className="table-action-button" onClick={() => openForecastItemEditor(item)} type="button">Edit</button>
@@ -735,7 +784,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
           <div className="control-row">
             <div>
               <h3>{editingId ? 'Edit Transaction' : 'Add Transaction'}</h3>
-              <p className="muted">Manual finance tracking only for this MVP.</p>
+              <p className="muted">Income and expenses update current cash. Transfers stay neutral in the combined balance.</p>
             </div>
             {editingId && (
               <button className="secondary-button" onClick={resetForm} type="button">
@@ -857,14 +906,39 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
 
         <div className="transaction-list">
           <div className="panel">
-            <h3>Recent Transactions</h3>
+            <div className="finance-overview-heading">
+              <div><h3>Transaction ledger</h3><p className="muted">Search, edit, or remove actual money movement.</p></div>
+              <span className="financing-result-count">{filteredTransactions.length} of {transactions.length}</span>
+            </div>
+            <div className="financing-toolbar transaction-toolbar">
+              <label className="financing-search">
+                <span className="sr-only">Search transactions</span>
+                <input onChange={(event) => setTransactionSearch(event.target.value)} placeholder="Search transactions…" type="search" value={transactionSearch} />
+              </label>
+              <label>
+                <span className="sr-only">Filter by transaction type</span>
+                <select onChange={(event) => setTransactionType(event.target.value)} value={transactionType}>
+                  <option value="all">All types</option>
+                  {transactionTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </label>
+              <label>
+                <span className="sr-only">Filter by transaction category</span>
+                <select onChange={(event) => setTransactionCategory(event.target.value)} value={transactionCategory}>
+                  <option value="all">All categories</option>
+                  {transactionCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
+              </label>
+            </div>
             {loading ? (
               <p className="muted">Loading transactions...</p>
             ) : transactions.length === 0 ? (
               <p className="muted">No transactions yet.</p>
+            ) : filteredTransactions.length === 0 ? (
+              <div className="finance-empty-state"><strong>No matching transactions</strong><p className="muted">Try a different search or filter.</p><button className="secondary-button" onClick={() => { setTransactionSearch(''); setTransactionType('all'); setTransactionCategory('all'); }} type="button">Clear filters</button></div>
             ) : (
               <div className="transaction-stack">
-                {transactions.map((transaction) => (
+                {filteredTransactions.map((transaction) => (
                   <article className={`transaction-card ${transaction.type}`} key={transaction._id}>
                     <div className="transaction-card-header">
                       <div>
@@ -891,6 +965,9 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                     <div className="entry-actions">
                       <button className="secondary-button" onClick={() => handleEdit(transaction)} type="button">
                         Edit
+                      </button>
+                      <button className="danger-button" disabled={deletingId === transaction._id} onClick={() => handleDelete(transaction)} type="button">
+                        {deletingId === transaction._id ? 'Deleting…' : 'Delete'}
                       </button>
                     </div>
                   </article>
@@ -923,12 +1000,12 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
 
             {financeEditor.type === 'forecast' && (
               <>
-                <p className="muted">Enter the cash you have on the snapshot date. Future planned items will be calculated from this amount.</p>
+                <p className="muted">Enter the cash you can verify right now. This creates a fresh baseline; transactions recorded afterward will move it automatically.</p>
                 <div className="form-grid two">
                   <label>Forecast name<input required value={financeEditor.values.name} onChange={(event) => updateEditor('name', event.target.value)} /></label>
                   <label>Cash account name<input required value={financeEditor.values.account_name} onChange={(event) => updateEditor('account_name', event.target.value)} placeholder="Available cash" /></label>
-                  <label>Current cash<input min="0" required step="0.01" type="number" value={financeEditor.values.starting_balance} onChange={(event) => updateEditor('starting_balance', event.target.value)} /></label>
-                  <label>Snapshot date<input required type="date" value={financeEditor.values.as_of_date} onChange={(event) => updateEditor('as_of_date', event.target.value)} /></label>
+                  <label>Verified current cash<input min="0" required step="0.01" type="number" value={financeEditor.values.starting_balance} onChange={(event) => updateEditor('starting_balance', event.target.value)} /></label>
+                  <label>Reconciliation date<input required type="date" value={financeEditor.values.as_of_date} onChange={(event) => updateEditor('as_of_date', event.target.value)} /></label>
                   <label>Currency<input maxLength="3" required value={financeEditor.values.currency} onChange={(event) => updateEditor('currency', event.target.value.toUpperCase())} /></label>
                 </div>
               </>
@@ -944,7 +1021,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                   <label>Planned date<input required type="date" value={financeEditor.values.date_start} onChange={(event) => updateEditor('date_start', event.target.value)} /></label>
                   <label>Optional end date<input type="date" value={financeEditor.values.date_end} onChange={(event) => updateEditor('date_end', event.target.value)} /></label>
                   <label>Category<input value={financeEditor.values.category} onChange={(event) => updateEditor('category', event.target.value)} placeholder="Bills, salary, shopping" /></label>
-                  <label>Status<select value={financeEditor.values.status} onChange={(event) => updateEditor('status', event.target.value)}><option value="planned">Planned</option><option value="completed">Completed</option><option value="skipped">Skipped</option></select></label>
+                  <label>Status<select value={financeEditor.values.status} onChange={(event) => updateEditor('status', event.target.value)}><option value="planned">Planned</option><option value="completed">Handled (no cash entry)</option><option value="skipped">Skipped</option></select></label>
                   <label className="checkbox-row"><input checked={financeEditor.values.is_group} onChange={(event) => updateEditor('is_group', event.target.checked)} type="checkbox" /> Combined payment</label>
                 </div>
                 <label>Notes<textarea rows={3} value={financeEditor.values.notes} onChange={(event) => updateEditor('notes', event.target.value)} /></label>

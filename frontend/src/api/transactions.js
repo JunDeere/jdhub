@@ -40,3 +40,11 @@ export async function updateTransaction(token, id, transaction) {
   });
   return parseJson(response);
 }
+
+export async function deleteTransaction(token, id) {
+  const response = await fetch(`${API_BASE}/api/transactions/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseJson(response);
+}

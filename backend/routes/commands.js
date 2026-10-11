@@ -12,6 +12,7 @@ const Transaction = require('../models/Transaction');
 const authMiddleware = require('../middleware/auth');
 const { demoAiRateLimit } = require('../config/security');
 const { resolutionStatus } = require('../services/financeForecastResolver');
+const { summarizeCashTransactions } = require('../services/financeCashLedger');
 const { flattenSearchResults, unifiedSearch } = require('../services/unifiedSearch');
 const {
   assertActionScope,
@@ -251,7 +252,16 @@ async function buildAiContext(userId, requestedModule, question = '') {
 
   let forecast = null;
   if (financeForecast) {
-    let projectedBalance = Number(financeForecast.starting_balance || 0);
+    const ledgerTransactions = financeForecast.cash_anchor_at
+      ? await Transaction.find({
+        user_id: userId,
+        createdAt: { $gt: financeForecast.cash_anchor_at },
+        currency: String(financeForecast.currency || 'PHP').toUpperCase(),
+        type: { $in: ['income', 'expense'] },
+      }).select('type amount currency').lean()
+      : [];
+    const cash = summarizeCashTransactions(financeForecast, ledgerTransactions);
+    let projectedBalance = cash.current_balance;
     let totalIncome = 0;
     let totalExpense = 0;
     let lowestBalance = projectedBalance;
@@ -260,7 +270,7 @@ async function buildAiContext(userId, requestedModule, question = '') {
     const items = [...(financeForecast.items || [])]
       .sort((left, right) => new Date(left.date_start) - new Date(right.date_start))
       .map((item) => {
-        if (item.status !== 'skipped') {
+        if (item.status === 'planned') {
           if (item.kind === 'income') {
             projectedBalance += Number(item.amount || 0);
             totalIncome += Number(item.amount || 0);
@@ -294,6 +304,8 @@ async function buildAiContext(userId, requestedModule, question = '') {
       currency: financeForecast.currency || 'PHP',
       asOfDate: financeForecast.as_of_date,
       startingBalance: Number(financeForecast.starting_balance || 0),
+      currentBalance: cash.current_balance,
+      ledgerNetChange: cash.net_change,
       totalIncome: Number(totalIncome.toFixed(2)),
       totalExpense: Number(totalExpense.toFixed(2)),
       netChange: Number((totalIncome - totalExpense).toFixed(2)),
@@ -408,7 +420,7 @@ function buildLocalFinanceSummary(context) {
       ? ` ${forecast.resolution.overdue} past forecast item${forecast.resolution.overdue === 1 ? ' is' : 's are'} still unresolved and should be checked rather than assumed paid.`
       : '';
 
-    return `Your saved ${forecast.accountName} forecast starts at ${formatMoney(forecast.startingBalance, forecast.currency)} as of ${formatShortDate(forecast.asOfDate)}. It includes ${formatMoney(forecast.totalIncome, forecast.currency)} of planned income and ${formatMoney(forecast.totalExpense, forecast.currency)} of planned expenses, for a projected ending balance of ${formatMoney(forecast.endingBalance, forecast.currency)}. The lowest projected balance is ${formatMoney(forecast.lowestBalance, forecast.currency)} on ${formatShortDate(forecast.lowestBalanceDate)}.${overdueSentence}${financingSentence}`;
+    return `Your current ${forecast.accountName} cash is ${formatMoney(forecast.currentBalance, forecast.currency)}. That is the reconciled baseline plus ${formatMoney(forecast.ledgerNetChange, forecast.currency)} of actual ledger movement. You still have ${formatMoney(forecast.totalIncome, forecast.currency)} of unresolved planned income and ${formatMoney(forecast.totalExpense, forecast.currency)} of unresolved planned expenses, for a projected balance of ${formatMoney(forecast.endingBalance, forecast.currency)}. The lowest projected balance is ${formatMoney(forecast.lowestBalance, forecast.currency)} on ${formatShortDate(forecast.lowestBalanceDate)}.${overdueSentence}${financingSentence}`;
   }
 
   if (transactions.length) {

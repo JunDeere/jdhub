@@ -5646,6 +5646,14 @@ h3 {
   font-size: 16px;
 }
 
+.forecast-summary-grid small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
 .forecast-income,
 .forecast-table tr.income td:nth-child(3) {
   color: var(--primary-strong);
@@ -5910,6 +5918,10 @@ h3 {
   grid-template-columns: minmax(260px, 1fr) minmax(150px, 200px) minmax(150px, 190px) auto;
   gap: 10px;
   align-items: center;
+}
+
+.transaction-toolbar {
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 170px) minmax(150px, 190px);
 }
 
 .financing-toolbar label {

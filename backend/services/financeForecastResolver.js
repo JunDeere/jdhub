@@ -43,11 +43,20 @@ function resolutionStatus(item, now = new Date()) {
   return 'upcoming';
 }
 
-function serializeForecast(document, now = new Date()) {
+function serializeForecast(document, now = new Date(), cashPosition = null) {
   if (!document) return null;
 
   const forecast = typeof document.toObject === 'function' ? document.toObject() : document;
-  let balance = Number(forecast.starting_balance || 0);
+  const cash = cashPosition || {
+    baseline_balance: Number(forecast.starting_balance || 0),
+    anchor_at: forecast.cash_anchor_at || forecast.as_of_date || null,
+    income: 0,
+    expense: 0,
+    net_change: 0,
+    current_balance: Number(forecast.starting_balance || 0),
+    transaction_count: 0,
+  };
+  let balance = Number(cash.current_balance || 0);
   let totalIncome = 0;
   let totalExpense = 0;
   const resolution = { completed: 0, overdue: 0, due_today: 0, upcoming: 0, skipped: 0 };
@@ -55,7 +64,9 @@ function serializeForecast(document, now = new Date()) {
   forecast.items = [...(forecast.items || [])]
     .sort((left, right) => new Date(left.date_start) - new Date(right.date_start))
     .map((item) => {
-      if (item.status !== 'skipped') {
+      // Completed items are already represented by the actual transaction ledger.
+      // Only unresolved plans should change the projected balance.
+      if (!['completed', 'skipped'].includes(item.status)) {
         if (item.kind === 'income') {
           balance += Number(item.amount || 0);
           totalIncome += Number(item.amount || 0);
@@ -80,6 +91,7 @@ function serializeForecast(document, now = new Date()) {
     net_change: Number((totalIncome - totalExpense).toFixed(2)),
     ending_balance: Number(balance.toFixed(2)),
   };
+  forecast.cash = cash;
   forecast.resolution = resolution;
 
   return forecast;
@@ -132,4 +144,32 @@ async function resolveForecastMatches(forecast, userId) {
   return { matched };
 }
 
-module.exports = { resolveForecastMatches, resolutionStatus, serializeForecast };
+async function releaseForecastMatch(userId, transactionId) {
+  if (!transactionId) return false;
+  const result = await require('../models/FinanceForecast').updateOne(
+    {
+      user_id: userId,
+      archived_at: { $exists: false },
+      'items.matched_transaction_id': transactionId,
+    },
+    {
+      $set: {
+        'items.$[item].status': 'planned',
+      },
+      $unset: {
+        'items.$[item].resolved_at': '',
+        'items.$[item].resolved_by': '',
+        'items.$[item].matched_transaction_id': '',
+      },
+    },
+    { arrayFilters: [{ 'item.matched_transaction_id': transactionId }] },
+  );
+  return result.modifiedCount > 0;
+}
+
+module.exports = {
+  releaseForecastMatch,
+  resolveForecastMatches,
+  resolutionStatus,
+  serializeForecast,
+};

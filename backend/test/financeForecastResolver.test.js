@@ -26,5 +26,29 @@ test('serialized forecasts expose resolver counts without assuming overdue items
   assert.equal(forecast.resolution.upcoming, 1);
   assert.equal(forecast.items[0].status, 'planned');
   assert.equal(forecast.items[0].resolution_status, 'overdue');
-  assert.equal(forecast.summary.ending_balance, 1350);
+  assert.equal(forecast.summary.total_income, 0);
+  assert.equal(forecast.summary.total_expense, 150);
+  assert.equal(forecast.summary.ending_balance, 850);
+});
+
+test('serialized forecasts project unresolved plans from ledger-derived current cash', () => {
+  const forecast = serializeForecast({
+    starting_balance: 1000,
+    items: [
+      { status: 'completed', kind: 'income', amount: 500, date_start: '2026-09-28T00:00:00.000Z' },
+      { status: 'planned', kind: 'expense', amount: 100, date_start: '2026-09-29T00:00:00.000Z' },
+    ],
+  }, now, {
+    baseline_balance: 1000,
+    current_balance: 1400,
+    income: 500,
+    expense: 100,
+    net_change: 400,
+    transaction_count: 2,
+  });
+
+  assert.equal(forecast.cash.current_balance, 1400);
+  assert.equal(forecast.items[0].projected_balance, 1400);
+  assert.equal(forecast.items[1].projected_balance, 1300);
+  assert.equal(forecast.summary.ending_balance, 1300);
 });
