@@ -1005,7 +1005,6 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                   <label>Forecast name<input required value={financeEditor.values.name} onChange={(event) => updateEditor('name', event.target.value)} /></label>
                   <label>Cash account name<input required value={financeEditor.values.account_name} onChange={(event) => updateEditor('account_name', event.target.value)} placeholder="Available cash" /></label>
                   <label>Verified current cash<input min="0" required step="0.01" type="number" value={financeEditor.values.starting_balance} onChange={(event) => updateEditor('starting_balance', event.target.value)} /></label>
-                  <label>Reconciliation date<input required type="date" value={financeEditor.values.as_of_date} onChange={(event) => updateEditor('as_of_date', event.target.value)} /></label>
                   <label>Currency<input maxLength="3" required value={financeEditor.values.currency} onChange={(event) => updateEditor('currency', event.target.value.toUpperCase())} /></label>
                 </div>
               </>
