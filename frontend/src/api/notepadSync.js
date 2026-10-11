@@ -12,6 +12,25 @@ export async function getNotepadSyncStatus(token) {
   return response.json();
 }
 
+export async function getLocalNotepadBridgeStatus() {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(`${LOCAL_BRIDGE_BASE}/status`, {
+      headers: { 'X-JDHub-Bridge': '1' },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Desktop bridge status check failed');
+    return body;
+  } catch {
+    return { online: false, machine: '', syncing: false };
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export async function retrieveWindowsNotepadNotes() {
   let response;
   try {

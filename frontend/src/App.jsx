@@ -23,7 +23,7 @@ import {
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from 'libphonenumber-js/min';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import CommandCenter from './pages/CommandCenter.jsx';
-import GoogleCalendarSettings from './components/GoogleCalendarSettings.jsx';
+import ConnectionCenter from './components/ConnectionCenter.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Diary from './pages/Diary.jsx';
@@ -419,7 +419,7 @@ function ProfileSettings({ token, user, onUserChange }) {
   );
 }
 
-function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUserChange }) {
+function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUserChange, onNavigate }) {
   return (
     <section className="module-page">
       <div className="page-heading">
@@ -443,9 +443,7 @@ function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUser
         />
       </div>
 
-      <div className="panel">
-        <GoogleCalendarSettings token={token} user={user} />
-      </div>
+      <ConnectionCenter token={token} user={user} onNavigate={onNavigate} />
 
       <div className="panel">
         <ThemeControls
@@ -733,6 +731,7 @@ function PrivateApp() {
           resolvedTheme={resolvedTheme}
           onThemeChange={setTheme}
           onUserChange={setUser}
+          onNavigate={navigateToPage}
         />
       )
     : activePage === 'module-status'

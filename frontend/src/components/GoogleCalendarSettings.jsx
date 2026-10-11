@@ -1,4 +1,4 @@
-import { Cloud, Plus, RefreshCw, Unplug } from 'lucide-react';
+import { Cloud, Plus, RefreshCw, RotateCw, Unplug } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   disconnectGoogleCalendar,
@@ -12,7 +12,7 @@ function connectedLabel(value) {
   return `Connected ${new Date(value).toLocaleDateString()}`;
 }
 
-export default function GoogleCalendarSettings({ token, user }) {
+export default function GoogleCalendarSettings({ token, user, onStatusChange, refreshKey = 0 }) {
   const [googleStatus, setGoogleStatus] = useState({ configured: true, accounts: [] });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState(null);
@@ -21,6 +21,7 @@ export default function GoogleCalendarSettings({ token, user }) {
   const loadStatus = async () => {
     const data = await getGoogleCalendarStatus(token);
     setGoogleStatus(data);
+    onStatusChange?.(data);
     return data;
   };
 
@@ -28,7 +29,12 @@ export default function GoogleCalendarSettings({ token, user }) {
     let cancelled = false;
     let feedbackTimer;
     getGoogleCalendarStatus(token)
-      .then((data) => { if (!cancelled) setGoogleStatus(data); })
+      .then((data) => {
+        if (!cancelled) {
+          setGoogleStatus(data);
+          onStatusChange?.(data);
+        }
+      })
       .catch((requestError) => { if (!cancelled) setError(requestError.message); });
 
     const url = new URL(window.location.href);
@@ -54,10 +60,10 @@ export default function GoogleCalendarSettings({ token, user }) {
       cancelled = true;
       if (feedbackTimer) window.clearTimeout(feedbackTimer);
     };
-  }, [token]);
+  }, [token, onStatusChange, refreshKey]);
 
-  const connectAccount = async () => {
-    setBusy('connect');
+  const connectAccount = async (busyKey = 'connect') => {
+    setBusy(busyKey);
     setError(null);
     setSuccess(null);
     try {
@@ -100,7 +106,7 @@ export default function GoogleCalendarSettings({ token, user }) {
         <button
           className="primary-button"
           disabled={googleStatus.configured === false || Boolean(busy)}
-          onClick={connectAccount}
+          onClick={() => connectAccount()}
           type="button"
         >
           {busy === 'connect' ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />}
@@ -138,18 +144,31 @@ export default function GoogleCalendarSettings({ token, user }) {
                   {account.isPrimary ? 'Main account' : 'Additional account'} · {connectedLabel(account.connectedAt)}
                   {account.lastSyncedAt ? ` · Last synced ${new Date(account.lastSyncedAt).toLocaleString()}` : ''}
                 </small>
+                {account.lastError && <small className="connection-error-copy">Last error: {account.lastError}</small>}
               </div>
               {account.isPrimary && <span className="status-pill success">Main</span>}
-              <button
-                aria-label={`Disconnect ${account.accountEmail}`}
-                className="icon-only-button"
-                disabled={Boolean(busy)}
-                onClick={() => disconnectAccount(account)}
-                title={`Disconnect ${account.accountEmail}`}
-                type="button"
-              >
-                {busy === account.id ? <RefreshCw className="spin" size={16} /> : <Unplug size={16} />}
-              </button>
+              <div className="google-account-actions">
+                <button
+                  aria-label={`Reconnect ${account.accountEmail}`}
+                  className="icon-only-button"
+                  disabled={Boolean(busy)}
+                  onClick={() => connectAccount(`reconnect-${account.id}`)}
+                  title={`Reconnect ${account.accountEmail}`}
+                  type="button"
+                >
+                  {busy === `reconnect-${account.id}` ? <RefreshCw className="spin" size={16} /> : <RotateCw size={16} />}
+                </button>
+                <button
+                  aria-label={`Disconnect ${account.accountEmail}`}
+                  className="icon-only-button"
+                  disabled={Boolean(busy)}
+                  onClick={() => disconnectAccount(account)}
+                  title={`Disconnect ${account.accountEmail}`}
+                  type="button"
+                >
+                  {busy === account.id ? <RefreshCw className="spin" size={16} /> : <Unplug size={16} />}
+                </button>
+              </div>
             </article>
           ))}
         </div>
