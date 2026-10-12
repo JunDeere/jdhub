@@ -7032,6 +7032,13 @@ h3 {
   min-height: 38px;
 }
 
+.google-account-picker small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .google-event-label {
   width: fit-content;
   border-radius: 999px;

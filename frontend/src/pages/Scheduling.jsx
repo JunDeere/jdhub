@@ -117,8 +117,10 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged, onMan
     try {
       const data = await getSchedule(token, scheduleRange(monthDate));
       setScheduleItems(data.scheduleItems);
+      return data;
     } catch (err) {
       setError(err.message);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -177,8 +179,14 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged, onMan
     setStatusMessage(null);
     try {
       const data = await importGoogleCalendar(token, selectedGoogleAccountId);
-      setStatusMessage(`Imported ${data.imported} event${data.imported === 1 ? '' : 's'} from ${data.accountEmail}.`);
-      await Promise.all([loadSchedule(), loadGoogleStatus()]);
+      const [scheduleData] = await Promise.all([loadSchedule(), loadGoogleStatus()]);
+      const visibleCount = (scheduleData?.scheduleItems || []).filter(
+        (item) => item.external_account_email === data.accountEmail,
+      ).length;
+      const visibleSummary = visibleCount
+        ? `${visibleCount} appear in ${monthLabel(visibleMonth)}.`
+        : `None fall within ${monthLabel(visibleMonth)}.`;
+      setStatusMessage(`Synced ${data.imported} event${data.imported === 1 ? '' : 's'} from ${data.accountEmail}. ${visibleSummary}`);
       onScheduleChanged?.();
     } catch (err) {
       setError(err.message);
@@ -194,12 +202,27 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged, onMan
     setStatusMessage(null);
     try {
       let total = 0;
+      const failures = [];
       for (const account of googleStatus.accounts) {
-        const data = await importGoogleCalendar(token, account.id);
-        total += data.imported;
+        try {
+          const data = await importGoogleCalendar(token, account.id);
+          total += data.imported;
+        } catch (accountError) {
+          failures.push(`${account.accountEmail}: ${accountError.message}`);
+        }
       }
-      setStatusMessage(`Imported ${total} event${total === 1 ? '' : 's'} across ${googleStatus.accounts.length} Google accounts.`);
-      await Promise.all([loadSchedule(), loadGoogleStatus()]);
+      const [scheduleData] = await Promise.all([loadSchedule(), loadGoogleStatus()]);
+      const visibleGoogleItems = (scheduleData?.scheduleItems || []).filter(
+        (item) => item.external_provider === 'google',
+      ).length;
+      if (failures.length === googleStatus.accounts.length) {
+        throw new Error(`No Google accounts could be synced. ${failures.join(' · ')}`);
+      }
+      if (failures.length) {
+        setError(`Synced ${googleStatus.accounts.length - failures.length} account${googleStatus.accounts.length - failures.length === 1 ? '' : 's'}, but ${failures.join(' · ')}`);
+      } else {
+        setStatusMessage(`Synced ${total} event${total === 1 ? '' : 's'} across all accounts. ${visibleGoogleItems} appear in ${monthLabel(visibleMonth)}.`);
+      }
       onScheduleChanged?.();
     } catch (err) {
       setError(err.message);
@@ -388,15 +411,16 @@ export default function Scheduling({ token, refreshKey, onScheduleChanged, onMan
                     </option>
                   ))}
                 </select>
+                <small>“Selected” syncs only this account.</small>
               </label>
-              <button className="secondary-button" disabled={Boolean(googleBusy)} onClick={importFromGoogle} type="button">
+              <button className="secondary-button" disabled={Boolean(googleBusy)} onClick={importFromGoogle} title={`Sync events from ${selectedGoogleAccount?.accountEmail || 'the selected account'}`} type="button">
                 <RefreshCw className={googleBusy === 'import' ? 'spin' : ''} size={16} />
-                {googleBusy === 'import' ? 'Importing...' : 'Import selected'}
+                {googleBusy === 'import' ? 'Syncing...' : 'Sync selected'}
               </button>
               {googleAccounts.length > 1 && (
-                <button className="secondary-button" disabled={Boolean(googleBusy)} onClick={importAllFromGoogle} type="button">
+                <button className="secondary-button" disabled={Boolean(googleBusy)} onClick={importAllFromGoogle} title="Sync and combine events from every connected Google account" type="button">
                   <RefreshCw className={googleBusy === 'import-all' ? 'spin' : ''} size={16} />
-                  {googleBusy === 'import-all' ? 'Importing all...' : 'Import all'}
+                  {googleBusy === 'import-all' ? 'Syncing all...' : 'Sync all accounts'}
                 </button>
               )}
               <button className="primary-button" disabled={Boolean(googleBusy)} onClick={pushToGoogle} type="button">
