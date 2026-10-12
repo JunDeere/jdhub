@@ -1,6 +1,11 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { resolutionStatus, serializeForecast } = require('../services/financeForecastResolver');
+const {
+  financingLabelMatches,
+  resolutionStatus,
+  selectLinkedFinancingTransaction,
+  serializeForecast,
+} = require('../services/financeForecastResolver');
 
 const now = new Date('2026-09-28T08:00:00.000Z');
 
@@ -51,4 +56,35 @@ test('serialized forecasts project unresolved plans from ledger-derived current 
   assert.equal(forecast.items[0].projected_balance, 1400);
   assert.equal(forecast.items[1].projected_balance, 1300);
   assert.equal(forecast.summary.ending_balance, 1300);
+});
+
+test('linked financing payments match their billing cycle even when paid early or rounded differently', () => {
+  const financingId = '507f1f77bcf86cd799439011';
+  const transactionId = '507f191e810c19729de860ea';
+  const item = {
+    label: 'GLoan KDB',
+    kind: 'expense',
+    amount: 3473.18,
+    date_start: new Date('2026-10-16T00:00:00.000Z'),
+  };
+  const transaction = {
+    _id: { toString: () => transactionId },
+    financing_item_id: { toString: () => financingId },
+    financing_payment_amount: 3473.17,
+    date: new Date('2026-10-12T00:00:00.000Z'),
+  };
+  const financing = { name: 'GLoan KDB' };
+
+  assert.equal(financingLabelMatches(item, financing), true);
+  assert.equal(selectLinkedFinancingTransaction(
+    item,
+    [transaction],
+    new Map([[financingId, financing]]),
+    new Map([[transactionId, 1]]),
+  ), transaction);
+});
+
+test('linked financing payments do not clear unrelated or aggregate forecast rows', () => {
+  assert.equal(financingLabelMatches({ label: 'Loans' }, { name: 'GLoan KDB' }), false);
+  assert.equal(financingLabelMatches({ label: 'SPayLater' }, { name: 'SPayLater' }), true);
 });

@@ -32,6 +32,29 @@ function textMatches(item, transaction) {
   return [...expected].some((word) => actual.has(word));
 }
 
+function financingLabelMatches(item, financing) {
+  const itemLabel = normalizeWords(item.label).join(' ');
+  const financingName = normalizeWords(financing?.name).join(' ');
+  return Boolean(itemLabel && financingName && itemLabel === financingName);
+}
+
+function selectLinkedFinancingTransaction(item, transactions, financingById, remainingUses) {
+  if (item.kind !== 'expense') return null;
+  const itemDate = startOfUtcDay(item.date_start);
+  const itemWindowEnd = new Date(startOfUtcDay(item.date_end || item.date_start).getTime() + (4 * DAY_MS));
+
+  return transactions.find((transaction) => {
+    const transactionId = transaction._id.toString();
+    if ((remainingUses.get(transactionId) || 0) <= 0 || !transaction.financing_item_id) return false;
+    const financing = financingById.get(transaction.financing_item_id.toString());
+    if (!financing || !financingLabelMatches(item, financing)) return false;
+
+    const paymentDate = startOfUtcDay(transaction.date);
+    const paymentMonthStart = new Date(Date.UTC(paymentDate.getUTCFullYear(), paymentDate.getUTCMonth(), 1));
+    return itemDate >= paymentMonthStart && paymentDate < itemWindowEnd;
+  }) || null;
+}
+
 function resolutionStatus(item, now = new Date()) {
   if (item.status === 'completed') return 'completed';
   if (item.status === 'skipped') return 'skipped';
@@ -109,7 +132,9 @@ async function resolveForecastMatches(forecast, userId) {
   const planned = forecast.items.filter((item) => item.status === 'planned');
   if (!planned.length) return { matched: 0 };
 
-  const earliest = new Date(Math.min(...planned.map((item) => new Date(item.date_start).getTime())) - (3 * DAY_MS));
+  // Financing payments are often made early, so include the previous billing
+  // month and use their explicit financing link instead of amount guessing.
+  const earliest = new Date(Math.min(...planned.map((item) => new Date(item.date_start).getTime())) - (45 * DAY_MS));
   const latest = new Date(Math.max(...planned.map((item) => new Date(item.date_end || item.date_start).getTime())) + (4 * DAY_MS));
   const transactions = await Transaction.find({
     user_id: userId,
@@ -120,9 +145,44 @@ async function resolveForecastMatches(forecast, userId) {
       .map((item) => item.matched_transaction_id?.toString())
       .filter(Boolean),
   );
+  const matchedTransactionUses = new Map();
+  forecast.items.forEach((item) => {
+    const id = item.matched_transaction_id?.toString();
+    if (id) matchedTransactionUses.set(id, (matchedTransactionUses.get(id) || 0) + 1);
+  });
+  const remainingUses = new Map(transactions.map((transaction) => [
+    transaction._id.toString(),
+    Math.max(
+      0,
+      Number(transaction.financing_installments_paid || 1)
+        - Number(matchedTransactionUses.get(transaction._id.toString()) || 0),
+    ),
+  ]));
+  const financingById = new Map(
+    (forecast.financing || []).map((item) => [item._id.toString(), item]),
+  );
   let matched = 0;
 
   for (const item of planned) {
+    const linkedFinancingPayment = selectLinkedFinancingTransaction(
+      item,
+      transactions,
+      financingById,
+      remainingUses,
+    );
+    if (linkedFinancingPayment) {
+      const transactionId = linkedFinancingPayment._id.toString();
+      item.status = 'completed';
+      item.resolved_at = new Date();
+      item.resolved_by = 'transaction';
+      item.matched_transaction_id = linkedFinancingPayment._id;
+      const usesLeft = (remainingUses.get(transactionId) || 1) - 1;
+      remainingUses.set(transactionId, usesLeft);
+      if (usesLeft <= 0) usedTransactions.add(transactionId);
+      matched += 1;
+      continue;
+    }
+
     const windowStart = new Date(startOfUtcDay(item.date_start).getTime() - (3 * DAY_MS));
     const windowEnd = new Date(startOfUtcDay(item.date_end || item.date_start).getTime() + (4 * DAY_MS));
     const candidates = transactions.filter((transaction) => (
@@ -174,8 +234,10 @@ async function releaseForecastMatch(userId, transactionId) {
 }
 
 module.exports = {
+  financingLabelMatches,
   releaseForecastMatch,
   resolveForecastMatches,
   resolutionStatus,
+  selectLinkedFinancingTransaction,
   serializeForecast,
 };

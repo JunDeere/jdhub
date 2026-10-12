@@ -151,6 +151,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [editorSaving, setEditorSaving] = useState(false);
   const [editorError, setEditorError] = useState(null);
   const [forecastRange, setForecastRange] = useState('month');
+  const [showHandledForecast, setShowHandledForecast] = useState(false);
   const [financingFees, setFinancingFees] = useState({});
   const [financingInstallments, setFinancingInstallments] = useState({});
   const [financingAdvanceOpen, setFinancingAdvanceOpen] = useState({});
@@ -269,6 +270,12 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
       label: forecastRanges.find((range) => range.id === forecastRange)?.label || 'All',
     };
   }, [forecast, forecastRange]);
+
+  const visibleForecastItems = useMemo(() => (
+    (forecastWindow?.items || []).filter((item) => (
+      showHandledForecast || !['completed', 'skipped'].includes(item.status)
+    ))
+  ), [forecastWindow, showHandledForecast]);
 
   const loadTransactions = async () => {
     setLoading(true);
@@ -756,6 +763,14 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                   {forecastRanges.map((range) => (
                     <button aria-pressed={forecastRange === range.id} className={forecastRange === range.id ? 'active' : ''} key={range.id} onClick={() => setForecastRange(range.id)} type="button">{range.label}</button>
                   ))}
+                  <button
+                    aria-pressed={showHandledForecast}
+                    className={showHandledForecast ? 'active' : ''}
+                    onClick={() => setShowHandledForecast((current) => !current)}
+                    type="button"
+                  >
+                    {showHandledForecast ? 'Hide handled' : `Show handled (${(forecastWindow.resolution.completed || 0) + (forecastWindow.resolution.skipped || 0)})`}
+                  </button>
                 </div>
               </div>
               <div className="forecast-resolver-summary" role="status">
@@ -766,7 +781,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                 <span>{forecastWindow.resolution.overdue || 0} need review</span>
                 <span>{forecastWindow.resolution.due_today || 0} due today</span>
                 <span>{forecastWindow.resolution.upcoming || 0} upcoming</span>
-                <small>Exact dated transactions are matched automatically. Marking a plan handled removes it from the projection; only an actual transaction moves current cash.</small>
+                <small>Linked financing payments clear their billing cycle even when paid early or with fees. Other transactions use date, amount, and description matching; only actual transactions move current cash.</small>
               </div>
               <div className="forecast-summary-grid">
                 <div><span>Current cash</span><strong>{money(forecast.cash?.current_balance ?? forecast.starting_balance, forecast.currency)}</strong><small>{money(forecast.cash?.baseline_balance ?? forecast.starting_balance, forecast.currency)} baseline {forecast.cash?.net_change >= 0 ? '+' : '−'} {money(Math.abs(forecast.cash?.net_change || 0), forecast.currency)} ledger</small></div>
@@ -782,7 +797,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                     <tr className="forecast-start-row">
                       <td data-label="Date">Now</td><td data-label="Transaction">Current {forecast.account_name}</td><td data-label="Amount">—</td><td data-label="Projected balance">{money(forecast.cash?.current_balance ?? forecast.starting_balance, forecast.currency)}</td><td data-label="Status">Live ledger</td>
                     </tr>
-                    {forecastWindow.items.map((item) => (
+                    {visibleForecastItems.map((item) => (
                       <tr className={`${item.kind} ${item.resolution_status}`} key={item._id}>
                         <td data-label="Date">{forecastDateLabel(item.date_start, item.date_end)}</td>
                         <td data-label="Transaction"><strong>{item.label}</strong>{item.is_group && <small>Combined payment</small>}</td>
@@ -799,8 +814,8 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                         </td>
                       </tr>
                     ))}
-                    {!forecastWindow.items.length && (
-                      <tr><td className="forecast-window-empty" colSpan="5">No planned items fall within this time window.</td></tr>
+                    {!visibleForecastItems.length && (
+                      <tr><td className="forecast-window-empty" colSpan="5">No unresolved forecast items fall within this time window.</td></tr>
                     )}
                   </tbody>
                 </table>
