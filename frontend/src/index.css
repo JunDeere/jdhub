@@ -6613,6 +6613,58 @@ h3 {
   line-height: 1.45;
 }
 
+.financing-payment-form {
+  display: grid;
+  grid-template-columns: minmax(92px, 120px) auto auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 230px;
+}
+
+.financing-payment-form label {
+  min-width: 0;
+}
+
+.financing-payment-form input {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.financing-payment-form > button[type="submit"] {
+  min-height: 32px;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  background: var(--primary);
+  color: var(--primary-contrast);
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.financing-payment-form button:disabled,
+.financing-payment-form input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.financing-payment-mobile {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+.financing-payment-mobile label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .financing-mobile {
   display: none;
 }

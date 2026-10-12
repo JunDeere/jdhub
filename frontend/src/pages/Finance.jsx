@@ -76,6 +76,11 @@ function resolutionLabel(status, resolvedBy) {
   }[status] || 'Planned';
 }
 
+function financingPaidOff(item) {
+  if (item.remaining_balance != null) return Number(item.remaining_balance) <= 0;
+  return item.installments_remaining != null && Number(item.installments_remaining) <= 0;
+}
+
 export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ income: 0, expense: 0, transfer: 0, net: 0 });
@@ -102,6 +107,8 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [editorSaving, setEditorSaving] = useState(false);
   const [editorError, setEditorError] = useState(null);
   const [forecastRange, setForecastRange] = useState('month');
+  const [financingPayments, setFinancingPayments] = useState({});
+  const [payingFinancingId, setPayingFinancingId] = useState(null);
 
   const financingProviders = useMemo(() => (
     [...new Set((forecast?.financing || []).map((item) => item.provider || 'Financing'))]
@@ -347,6 +354,52 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
       setError(err.message);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const updateFinancingPayment = (itemId, value) => {
+    setFinancingPayments((current) => ({ ...current, [itemId]: value }));
+    setError(null);
+  };
+
+  const recordFinancingPayment = async (event, item) => {
+    event.preventDefault();
+    if (payingFinancingId) return;
+    if (financingPaidOff(item)) {
+      setError(`${item.name} is already paid off.`);
+      return;
+    }
+
+    const amount = Number(financingPayments[item._id]);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError(`Enter the amount paid for ${item.name}.`);
+      return;
+    }
+
+    setPayingFinancingId(item._id);
+    setError(null);
+    setStatusMessage(null);
+    try {
+      await createTransaction(token, {
+        type: 'expense',
+        amount,
+        currency: forecast?.currency || 'PHP',
+        category: 'Bills',
+        date: dateInputToUtcIso(toUtcDateInput(new Date())),
+        merchant_or_source: item.name,
+        payment_method: 'Other',
+        financing_item_id: item._id,
+        note: `Payment recorded from Loans & installments${item.provider ? ` · ${item.provider}` : ''}`,
+        tags: ['financing', 'payment'],
+      });
+      setFinancingPayments((current) => ({ ...current, [item._id]: '' }));
+      await loadTransactions();
+      onTransactionsChanged?.();
+      setStatusMessage(`${money(amount, forecast?.currency)} payment recorded for ${item.name}.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPayingFinancingId(null);
     }
   };
 
@@ -676,7 +729,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
             <div>
             <p className="eyebrow">Debt tracking</p>
             <h3>Loans and installments</h3>
-            <p className="muted">Track money still owed on loans and pay-later plans. Link an expense transaction when you make a payment so its balance decreases.</p>
+            <p className="muted">Track money still owed on loans and pay-later plans. Enter an amount and record it here—the expense transaction and updated balance are handled together.</p>
             </div>
             {forecast && (
               <div className="financing-heading-actions">
@@ -738,7 +791,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                       <th scope="col">Expected payment</th>
                       <th scope="col">Due</th>
                       <th scope="col">Notes</th>
-                      <th scope="col">Action</th>
+                      <th scope="col">Record payment</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -750,7 +803,28 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                         <td>{item.estimated_monthly == null ? 'Variable' : money(item.estimated_monthly, forecast.currency)}</td>
                         <td>{item.due_day ? `Day ${item.due_day}` : 'Varies'}</td>
                         <td className="financing-notes">{item.notes || '—'}</td>
-                        <td><button className="table-action-button" onClick={() => openFinancingEditor(item)} type="button">Edit</button></td>
+                        <td>
+                          <form className="financing-payment-form" onSubmit={(event) => recordFinancingPayment(event, item)}>
+                            <label>
+                              <span className="sr-only">Amount paid for {item.name}</span>
+                              <input
+                                aria-label={`Amount paid for ${item.name}`}
+                                disabled={payingFinancingId === item._id || financingPaidOff(item)}
+                                max={item.remaining_balance ?? undefined}
+                                min="0.01"
+                                onChange={(event) => updateFinancingPayment(item._id, event.target.value)}
+                                placeholder={item.estimated_monthly == null ? 'Amount' : Number(item.estimated_monthly).toFixed(2)}
+                                step="0.01"
+                                type="number"
+                                value={financingPayments[item._id] || ''}
+                              />
+                            </label>
+                            <button disabled={payingFinancingId === item._id || financingPaidOff(item)} type="submit">
+                              {financingPaidOff(item) ? 'Paid off' : payingFinancingId === item._id ? 'Saving…' : 'Paid'}
+                            </button>
+                            <button className="table-action-button" disabled={Boolean(payingFinancingId)} onClick={() => openFinancingEditor(item)} type="button">Edit</button>
+                          </form>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -768,7 +842,25 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                       <div><dt>Due</dt><dd>{item.due_day ? `Day ${item.due_day}` : 'Varies'}</dd></div>
                     </dl>
                     {item.notes && <p>{item.notes}</p>}
-                    <button className="secondary-button" onClick={() => openFinancingEditor(item)} type="button">Edit financing</button>
+                    <form className="financing-payment-form financing-payment-mobile" onSubmit={(event) => recordFinancingPayment(event, item)}>
+                      <label>
+                        Amount paid
+                        <input
+                          disabled={payingFinancingId === item._id || financingPaidOff(item)}
+                          max={item.remaining_balance ?? undefined}
+                          min="0.01"
+                          onChange={(event) => updateFinancingPayment(item._id, event.target.value)}
+                          placeholder={item.estimated_monthly == null ? 'Enter amount' : Number(item.estimated_monthly).toFixed(2)}
+                          step="0.01"
+                          type="number"
+                          value={financingPayments[item._id] || ''}
+                        />
+                      </label>
+                      <button disabled={payingFinancingId === item._id || financingPaidOff(item)} type="submit">
+                        {financingPaidOff(item) ? 'Paid off' : payingFinancingId === item._id ? 'Recording…' : 'Record as paid'}
+                      </button>
+                    </form>
+                    <button className="secondary-button" disabled={Boolean(payingFinancingId)} onClick={() => openFinancingEditor(item)} type="button">Edit financing</button>
                   </article>
                 ))}
               </div>
