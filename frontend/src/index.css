@@ -897,7 +897,7 @@ h3 {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 280px) minmax(0, 1fr);
   transition: grid-template-columns 160ms ease;
   overflow-x: hidden;
 }
@@ -907,10 +907,51 @@ h3 {
 }
 
 .sidebar {
+  position: relative;
   background: var(--sidebar);
   color: var(--sidebar-text);
   padding: 20px 14px;
   overflow-y: auto;
+}
+
+.sidebar-resizer {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background 140ms ease, width 140ms ease;
+}
+
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after,
+.is-resizing-sidebar .sidebar-resizer::after {
+  width: 4px;
+  background: var(--primary);
+}
+
+.is-resizing-sidebar,
+.is-resizing-sidebar * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.is-resizing-sidebar .app-shell {
+  transition: none;
 }
 
 .brand-block {
@@ -1047,6 +1088,10 @@ h3 {
 .sidebar-collapsed .sidebar {
   padding: 18px 10px;
   overflow-x: hidden;
+}
+
+.sidebar-collapsed .sidebar-resizer {
+  display: none;
 }
 
 .sidebar-collapsed .brand-block {
@@ -8013,6 +8058,10 @@ h3 {
     transform: translateX(-105%);
     transition: transform 180ms ease;
     box-shadow: 18px 0 42px rgba(0, 0, 0, 0.3);
+  }
+
+  .sidebar-resizer {
+    display: none;
   }
 
   .mobile-sidebar-open .sidebar {

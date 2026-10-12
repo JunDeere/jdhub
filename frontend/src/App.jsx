@@ -50,6 +50,7 @@ import { installPortfolioBridge, waitForPortfolioPage } from './portfolioBridge.
 const STORAGE_KEY = 'jdhubToken';
 const THEME_KEY = 'jdhubTheme';
 const SIDEBAR_KEY = 'jdhubSidebarCollapsed';
+const SIDEBAR_WIDTH_KEY = 'jdhubSidebarWidth';
 const ASSISTANT_WIDTH_KEY = 'jdhubAssistantWidth';
 const PORTFOLIO_DEMO_PAGE_IDS = new Set(['dashboard', 'projects', 'tasks', 'scheduling', 'knowledge-base']);
 const DIRECT_HASH_PAGE_IDS = new Set([...PORTFOLIO_DEMO_PAGE_IDS, 'reviews', 'settings']);
@@ -451,6 +452,10 @@ function PrivateApp() {
   const [topbarPrompt, setTopbarPrompt] = useState('');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem(SIDEBAR_KEY) === 'true');
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const savedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return Number.isFinite(savedWidth) && savedWidth >= 220 && savedWidth <= 420 ? savedWidth : 280;
+  });
   const [theme, setTheme] = useState(localStorage.getItem(THEME_KEY) || 'system');
   const [portfolioHighlight, setPortfolioHighlight] = useState(null);
   const [resolvedTheme, setResolvedTheme] = useState(
@@ -535,6 +540,10 @@ function PrivateApp() {
   useEffect(() => {
     localStorage.setItem(SIDEBAR_KEY, String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(sidebarWidth)));
+  }, [sidebarWidth]);
 
   const handleLogin = useCallback((newToken, loggedInUser) => {
     localStorage.setItem(STORAGE_KEY, newToken);
@@ -656,6 +665,42 @@ function PrivateApp() {
     setSidebarCollapsed((current) => !current);
   };
 
+  const resizeSidebar = (clientX) => {
+    const maximum = Math.min(420, Math.max(280, window.innerWidth * 0.42));
+    setSidebarWidth(Math.min(maximum, Math.max(220, clientX)));
+  };
+
+  const handleSidebarResizeStart = (event) => {
+    if (sidebarCollapsed || window.matchMedia('(max-width: 980px)').matches) return;
+    event.preventDefault();
+    document.body.classList.add('is-resizing-sidebar');
+
+    const handlePointerMove = (pointerEvent) => resizeSidebar(pointerEvent.clientX);
+    const handlePointerUp = () => {
+      document.body.classList.remove('is-resizing-sidebar');
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  };
+
+  const resizeSidebarWithKeyboard = (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'Home') {
+      setSidebarWidth(280);
+      return;
+    }
+    setSidebarWidth((current) => Math.min(420, Math.max(
+      220,
+      current + (event.key === 'ArrowRight' ? 16 : -16),
+    )));
+  };
+
   const handleTopbarAssistantSubmit = (event) => {
     event.preventDefault();
     const prompt = topbarPrompt.trim();
@@ -762,7 +807,7 @@ function PrivateApp() {
           'app-shell',
           sidebarCollapsed ? 'sidebar-collapsed' : '',
           mobileSidebarOpen ? 'mobile-sidebar-open' : '',
-        ].filter(Boolean).join(' ')}>
+        ].filter(Boolean).join(' ')} style={{ '--sidebar-width': `${Math.round(sidebarWidth)}px` }}>
           <button
             aria-label="Close navigation"
             className="mobile-sidebar-backdrop"
@@ -819,6 +864,20 @@ function PrivateApp() {
                 </div>
               ))}
             </nav>
+            <div
+              aria-label="Resize navigation sidebar"
+              aria-orientation="vertical"
+              aria-valuemax="420"
+              aria-valuemin="220"
+              aria-valuenow={Math.round(sidebarWidth)}
+              className="sidebar-resizer"
+              onDoubleClick={() => setSidebarWidth(280)}
+              onKeyDown={resizeSidebarWithKeyboard}
+              onPointerDown={handleSidebarResizeStart}
+              role="separator"
+              tabIndex={sidebarCollapsed ? -1 : 0}
+              title="Drag to resize navigation · Double-click to reset"
+            />
           </aside>
 
           <div className={[
