@@ -1667,6 +1667,24 @@ h3 {
   min-width: 0;
 }
 
+.module-loading {
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.module-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: google-calendar-spin 0.8s linear infinite;
+}
+
 .assistant-workspace.has-assistant {
   display: grid;
   grid-template-areas: "module divider assistant";

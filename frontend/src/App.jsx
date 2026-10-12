@@ -26,29 +26,30 @@ import {
   X,
 } from 'lucide-react';
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from 'libphonenumber-js/min';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import CommandCenter from './pages/CommandCenter.jsx';
 import ConnectionCenter from './components/ConnectionCenter.jsx';
 import NotificationPreferences from './components/NotificationPreferences.jsx';
 import Login from './pages/Login.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import Diary from './pages/Diary.jsx';
-import Finance from './pages/Finance.jsx';
-import Files from './pages/Files.jsx';
-import Integrations from './pages/Integrations.jsx';
-import KnowledgeBase from './pages/KnowledgeBase.jsx';
-import LifeLog from './pages/LifeLog.jsx';
-import ModuleStatus from './pages/ModuleStatus.jsx';
-import Projects from './pages/Projects.jsx';
-import Reviews from './pages/Reviews.jsx';
-import PublicShare from './pages/PublicShare.jsx';
-import Scheduling from './pages/Scheduling.jsx';
-import ServerManager from './pages/ServerManager.jsx';
-import Security from './pages/Security.jsx';
-import Tasks from './pages/Tasks.jsx';
 import { getCurrentUser, getHealth, logout, updateCurrentUser } from './api/auth.js';
 import { getNotifications, markAllNotificationsRead, updateNotificationState } from './api/notifications.js';
 import { installPortfolioBridge, waitForPortfolioPage } from './portfolioBridge.js';
+
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Diary = lazy(() => import('./pages/Diary.jsx'));
+const Finance = lazy(() => import('./pages/Finance.jsx'));
+const Files = lazy(() => import('./pages/Files.jsx'));
+const Integrations = lazy(() => import('./pages/Integrations.jsx'));
+const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase.jsx'));
+const LifeLog = lazy(() => import('./pages/LifeLog.jsx'));
+const ModuleStatus = lazy(() => import('./pages/ModuleStatus.jsx'));
+const Projects = lazy(() => import('./pages/Projects.jsx'));
+const PublicShare = lazy(() => import('./pages/PublicShare.jsx'));
+const Reviews = lazy(() => import('./pages/Reviews.jsx'));
+const Scheduling = lazy(() => import('./pages/Scheduling.jsx'));
+const Security = lazy(() => import('./pages/Security.jsx'));
+const ServerManager = lazy(() => import('./pages/ServerManager.jsx'));
+const Tasks = lazy(() => import('./pages/Tasks.jsx'));
 
 const STORAGE_KEY = 'jdhubToken';
 const THEME_KEY = 'jdhubTheme';
@@ -57,6 +58,15 @@ const SIDEBAR_WIDTH_KEY = 'jdhubSidebarWidth';
 const ASSISTANT_WIDTH_KEY = 'jdhubAssistantWidth';
 const PORTFOLIO_DEMO_PAGE_IDS = new Set(['dashboard', 'projects', 'tasks', 'scheduling', 'knowledge-base']);
 const DIRECT_HASH_PAGE_IDS = new Set([...PORTFOLIO_DEMO_PAGE_IDS, 'reviews', 'settings']);
+
+function ModuleLoading() {
+  return (
+    <div className="module-loading" role="status">
+      <span className="module-loading-spinner" />
+      <span>Loading module…</span>
+    </div>
+  );
+}
 
 function initialActivePage() {
   const requested = window.location.hash.slice(1);
@@ -519,11 +529,26 @@ function PrivateApp() {
 
   useEffect(() => {
     if (!token) return undefined;
-    const initial = window.setTimeout(refreshNotifications, 0);
-    const interval = window.setInterval(refreshNotifications, 60000);
+
+    let interval;
+    const startPolling = () => {
+      window.clearInterval(interval);
+      interval = undefined;
+
+      if (document.visibilityState !== 'visible') return;
+      void refreshNotifications();
+      interval = window.setInterval(() => {
+        if (document.visibilityState === 'visible') void refreshNotifications();
+      }, 120000);
+    };
+
+    const initial = window.setTimeout(startPolling, 0);
+    document.addEventListener('visibilitychange', startPolling);
+
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', startPolling);
     };
   }, [token, dashboardRefreshKey, refreshNotifications]);
 
@@ -1035,7 +1060,11 @@ function PrivateApp() {
                   onNavigate={navigateToPage}
                   token={token}
                 />
-                {activePage !== 'command-center' && <div className="module-surface">{currentPage}</div>}
+                {activePage !== 'command-center' && (
+                  <div className="module-surface">
+                    <Suspense fallback={<ModuleLoading />}>{currentPage}</Suspense>
+                  </div>
+                )}
                 {activePage !== 'command-center' && assistantMode === 'integrated' && (
                   <div
                     aria-label="Resize JDHub Assistant"
@@ -1077,6 +1106,12 @@ function PrivateApp() {
 
 export default function App() {
   const shareMatch = window.location.pathname.match(/^\/s\/([A-Za-z0-9_-]{32,160})\/?$/);
-  if (shareMatch) return <PublicShare shareToken={shareMatch[1]} />;
+  if (shareMatch) {
+    return (
+      <Suspense fallback={<ModuleLoading />}>
+        <PublicShare shareToken={shareMatch[1]} />
+      </Suspense>
+    );
+  }
   return <PrivateApp />;
 }

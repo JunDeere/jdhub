@@ -1,8 +1,17 @@
 services:
   backend:
     restart: unless-stopped
+    mem_limit: ${JDHUB_BACKEND_MEMORY_LIMIT:-384m}
+    cpus: ${JDHUB_BACKEND_CPU_LIMIT:-1.0}
+    pids_limit: 150
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       - APP_ENV=production
+      - NODE_OPTIONS=${JDHUB_NODE_OPTIONS:---max-old-space-size=256}
       - TRUST_PROXY=1
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
       - AUTH_RATE_LIMIT_WINDOW_MS=${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
@@ -18,6 +27,14 @@ services:
 
   frontend:
     restart: unless-stopped
+    mem_limit: ${JDHUB_FRONTEND_MEMORY_LIMIT:-64m}
+    cpus: ${JDHUB_FRONTEND_CPU_LIMIT:-0.25}
+    pids_limit: 50
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     build:
       context: ./frontend
       args:
@@ -28,5 +45,14 @@ services:
 
   mongo:
     restart: unless-stopped
+    command: ["mongod", "--wiredTigerCacheSizeGB", "${JDHUB_MONGO_CACHE_GB:-0.5}"]
+    mem_limit: ${JDHUB_MONGO_MEMORY_LIMIT:-768m}
+    cpus: ${JDHUB_MONGO_CPU_LIMIT:-1.0}
+    pids_limit: 200
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - mongo-data:/data/db
