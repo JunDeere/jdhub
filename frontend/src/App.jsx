@@ -1,5 +1,4 @@
 import {
-  Activity,
   Bell,
   BookLock,
   BookOpen,
@@ -10,15 +9,19 @@ import {
   CircleDollarSign,
   ClipboardList,
   FileText,
+  Files as FilesIcon,
   FolderKanban,
+  Gauge,
   House,
   Menu,
+  NotebookPen,
   Plug,
-  SearchCheck,
   ShieldCheck,
   Send,
   Server,
   Settings,
+  Sparkles,
+  Star,
   CheckCheck,
   X,
 } from 'lucide-react';
@@ -62,20 +65,20 @@ function initialActivePage() {
 
 const navIcons = {
   dashboard: House,
-  'command-center': SearchCheck,
-  'life-log': FileText,
+  'command-center': Sparkles,
+  'life-log': NotebookPen,
   diary: BookLock,
-  reviews: Activity,
+  reviews: Star,
   tasks: ClipboardList,
   scheduling: CalendarDays,
   finance: CircleDollarSign,
   projects: FolderKanban,
   'knowledge-base': BookOpen,
-  files: FileText,
+  files: FilesIcon,
   automations: Bot,
   'server-manager': Server,
   integrations: Plug,
-  'module-status': Activity,
+  'module-status': Gauge,
   settings: Settings,
   security: ShieldCheck,
 };
@@ -83,6 +86,7 @@ const navIcons = {
 const navGroups = [
   {
     label: 'Core',
+    tone: 'core',
     items: [
       { id: 'dashboard', label: 'Home' },
       { id: 'command-center', label: 'Ask JDHub' },
@@ -90,6 +94,7 @@ const navGroups = [
   },
   {
     label: 'Personal',
+    tone: 'personal',
     items: [
       { id: 'diary', label: 'Diary' },
       { id: 'reviews', label: 'Reviews' },
@@ -101,6 +106,7 @@ const navGroups = [
   },
   {
     label: 'Work / Build',
+    tone: 'work',
     items: [
       { id: 'projects', label: 'Projects' },
       { id: 'knowledge-base', label: 'Knowledge Base' },
@@ -108,6 +114,7 @@ const navGroups = [
   },
   {
     label: 'Tools',
+    tone: 'tools',
     items: [
       { id: 'files', label: 'Files' },
       { id: 'automations', label: 'Automations', disabled: true },
@@ -115,6 +122,7 @@ const navGroups = [
   },
   {
     label: 'System',
+    tone: 'system',
     items: [
       { id: 'security', label: 'Administration', adminOnly: true },
       { id: 'server-manager', label: 'Infrastructure', adminOnly: true },
@@ -834,7 +842,7 @@ function PrivateApp() {
 
             <nav className="sidebar-nav" aria-label="Main navigation">
               {navGroups.map((group) => (
-                <div className="nav-group" key={group.label}>
+                <div className={`nav-group nav-group-${group.tone}`} key={group.label}>
                   <p className="nav-label">{group.label}</p>
                   {group.items.filter((item) => !item.adminOnly || user?.role === 'admin').map((item) => {
                     const Icon = navIcons[item.id] || FileText;
@@ -849,6 +857,7 @@ function PrivateApp() {
                           item.disabled ? 'disabled' : '',
                         ].filter(Boolean).join(' ')}
                         disabled={item.disabled}
+                        data-label={item.label}
                         key={item.id}
                         onClick={() => {
                           if (!item.disabled) navigateToPage(item.id);
