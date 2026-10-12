@@ -38,6 +38,8 @@ const emptyForm = {
   merchant_or_source: '',
   payment_method: 'Cash',
   financing_item_id: '',
+  financing_payment_amount: '',
+  financing_installments_paid: '',
   note: '',
   tags: '',
 };
@@ -81,6 +83,13 @@ function financingPaidOff(item) {
   return item.installments_remaining != null && Number(item.installments_remaining) <= 0;
 }
 
+function financingPaymentAmount(item, installments = 1) {
+  if (item.estimated_monthly == null || Number(item.estimated_monthly) <= 0) return null;
+  const expected = Number(item.estimated_monthly) * Number(installments || 1);
+  const remaining = item.remaining_balance == null ? null : Number(item.remaining_balance);
+  return Number((remaining == null ? expected : Math.min(expected, remaining)).toFixed(2));
+}
+
 export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ income: 0, expense: 0, transfer: 0, net: 0 });
@@ -107,7 +116,8 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [editorSaving, setEditorSaving] = useState(false);
   const [editorError, setEditorError] = useState(null);
   const [forecastRange, setForecastRange] = useState('month');
-  const [financingPayments, setFinancingPayments] = useState({});
+  const [financingFees, setFinancingFees] = useState({});
+  const [financingInstallments, setFinancingInstallments] = useState({});
   const [payingFinancingId, setPayingFinancingId] = useState(null);
 
   const financingProviders = useMemo(() => (
@@ -330,6 +340,12 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
       merchant_or_source: transaction.merchant_or_source || '',
       payment_method: transaction.payment_method || 'Cash',
       financing_item_id: transaction.financing_item_id || '',
+      financing_payment_amount: transaction.financing_item_id
+        ? String(transaction.financing_payment_amount ?? transaction.amount ?? '')
+        : '',
+      financing_installments_paid: transaction.financing_item_id
+        ? String(transaction.financing_installments_paid ?? 1)
+        : '',
       note: transaction.note || '',
       tags: (transaction.tags || []).join(', '),
     });
@@ -357,8 +373,13 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
     }
   };
 
-  const updateFinancingPayment = (itemId, value) => {
-    setFinancingPayments((current) => ({ ...current, [itemId]: value }));
+  const updateFinancingFee = (itemId, value) => {
+    setFinancingFees((current) => ({ ...current, [itemId]: value }));
+    setError(null);
+  };
+
+  const updateFinancingInstallments = (itemId, value) => {
+    setFinancingInstallments((current) => ({ ...current, [itemId]: value }));
     setError(null);
   };
 
@@ -370,11 +391,28 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
       return;
     }
 
-    const amount = Number(financingPayments[item._id]);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setError(`Enter the amount paid for ${item.name}.`);
+    const installments = Number(financingInstallments[item._id] || 1);
+    if (!Number.isInteger(installments) || installments < 1) {
+      setError(`Enter a valid number of installments for ${item.name}.`);
       return;
     }
+    if (item.installments_remaining != null && installments > Number(item.installments_remaining)) {
+      setError(`${item.name} only has ${item.installments_remaining} payments remaining.`);
+      return;
+    }
+    const paymentAmount = financingPaymentAmount(item, installments);
+    if (paymentAmount == null) {
+      setError(`Set an expected payment for ${item.name} before recording it.`);
+      return;
+    }
+    const fee = financingFees[item._id] === undefined || financingFees[item._id] === ''
+      ? 0
+      : Number(financingFees[item._id]);
+    if (!Number.isFinite(fee) || fee < 0) {
+      setError(`Enter a valid fee for ${item.name}.`);
+      return;
+    }
+    const amount = Number((paymentAmount + fee).toFixed(2));
 
     setPayingFinancingId(item._id);
     setError(null);
@@ -389,10 +427,13 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
         merchant_or_source: item.name,
         payment_method: 'Other',
         financing_item_id: item._id,
-        note: `Payment recorded from Loans & installments${item.provider ? ` · ${item.provider}` : ''}`,
+        financing_payment_amount: paymentAmount,
+        financing_installments_paid: installments,
+        note: `${installments} installment${installments === 1 ? '' : 's'} recorded from Loans & installments${item.provider ? ` · ${item.provider}` : ''}${fee ? ` · ${money(fee, forecast?.currency)} fees` : ''}`,
         tags: ['financing', 'payment'],
       });
-      setFinancingPayments((current) => ({ ...current, [item._id]: '' }));
+      setFinancingFees((current) => ({ ...current, [item._id]: '' }));
+      setFinancingInstallments((current) => ({ ...current, [item._id]: '1' }));
       await loadTransactions();
       onTransactionsChanged?.();
       setStatusMessage(`${money(amount, forecast?.currency)} payment recorded for ${item.name}.`);
@@ -795,7 +836,12 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredFinancing.map((item) => (
+                    {filteredFinancing.map((item) => {
+                      const installments = Number(financingInstallments[item._id] || 1);
+                      const paymentAmount = financingPaymentAmount(item, installments);
+                      const paymentUnavailable = financingPaidOff(item) || paymentAmount == null;
+                      const fee = Number(financingFees[item._id] || 0);
+                      return (
                       <tr key={item._id}>
                         <td><strong>{item.name}</strong><small>{item.provider || 'Financing'}</small></td>
                         <td>{item.remaining_balance == null ? 'Not provided' : money(item.remaining_balance, forecast.currency)}</td>
@@ -806,33 +852,60 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                         <td>
                           <form className="financing-payment-form" onSubmit={(event) => recordFinancingPayment(event, item)}>
                             <label>
-                              <span className="sr-only">Amount paid for {item.name}</span>
+                              <span>Installments</span>
                               <input
-                                aria-label={`Amount paid for ${item.name}`}
+                                aria-label={`Installments paid for ${item.name}`}
                                 disabled={payingFinancingId === item._id || financingPaidOff(item)}
-                                max={item.remaining_balance ?? undefined}
-                                min="0.01"
-                                onChange={(event) => updateFinancingPayment(item._id, event.target.value)}
-                                placeholder={item.estimated_monthly == null ? 'Amount' : Number(item.estimated_monthly).toFixed(2)}
-                                step="0.01"
+                                max={item.installments_remaining ?? undefined}
+                                min="1"
+                                onChange={(event) => updateFinancingInstallments(item._id, event.target.value)}
+                                step="1"
                                 type="number"
-                                value={financingPayments[item._id] || ''}
+                                value={financingInstallments[item._id] || '1'}
                               />
                             </label>
-                            <button disabled={payingFinancingId === item._id || financingPaidOff(item)} type="submit">
-                              {financingPaidOff(item) ? 'Paid off' : payingFinancingId === item._id ? 'Saving…' : 'Paid'}
+                            <label className="financing-payment-locked">
+                              <span>Payment</span>
+                              <input
+                                aria-label={`Locked payment amount for ${item.name}`}
+                                placeholder="Set amount"
+                                readOnly
+                                value={paymentAmount ?? ''}
+                              />
+                            </label>
+                            <label>
+                              <span>Fees</span>
+                              <input
+                                aria-label={`Fees for ${item.name}`}
+                                disabled={payingFinancingId === item._id || paymentUnavailable}
+                                min="0"
+                                onChange={(event) => updateFinancingFee(item._id, event.target.value)}
+                                placeholder="0.00"
+                                step="0.01"
+                                type="number"
+                                value={financingFees[item._id] || ''}
+                              />
+                            </label>
+                            <button disabled={payingFinancingId === item._id || paymentUnavailable} type="submit">
+                              {financingPaidOff(item) ? 'Paid off' : paymentAmount == null ? 'Set amount' : payingFinancingId === item._id ? 'Saving…' : 'Paid'}
                             </button>
                             <button className="table-action-button" disabled={Boolean(payingFinancingId)} onClick={() => openFinancingEditor(item)} type="button">Edit</button>
+                            {paymentAmount != null && <small>Cash total: {money(paymentAmount + (Number.isFinite(fee) ? fee : 0), forecast.currency)}</small>}
                           </form>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
 
               <div className="financing-grid financing-mobile">
-                {filteredFinancing.map((item) => (
+                {filteredFinancing.map((item) => {
+                  const installments = Number(financingInstallments[item._id] || 1);
+                  const paymentAmount = financingPaymentAmount(item, installments);
+                  const paymentUnavailable = financingPaidOff(item) || paymentAmount == null;
+                  const fee = Number(financingFees[item._id] || 0);
+                  return (
                   <article key={item._id}>
                     <div><strong>{item.name}</strong><span>{item.provider || 'Financing'}</span></div>
                     <dl>
@@ -844,25 +917,45 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                     {item.notes && <p>{item.notes}</p>}
                     <form className="financing-payment-form financing-payment-mobile" onSubmit={(event) => recordFinancingPayment(event, item)}>
                       <label>
-                        Amount paid
+                        Installments paid
                         <input
                           disabled={payingFinancingId === item._id || financingPaidOff(item)}
-                          max={item.remaining_balance ?? undefined}
-                          min="0.01"
-                          onChange={(event) => updateFinancingPayment(item._id, event.target.value)}
-                          placeholder={item.estimated_monthly == null ? 'Enter amount' : Number(item.estimated_monthly).toFixed(2)}
-                          step="0.01"
+                          max={item.installments_remaining ?? undefined}
+                          min="1"
+                          onChange={(event) => updateFinancingInstallments(item._id, event.target.value)}
+                          step="1"
                           type="number"
-                          value={financingPayments[item._id] || ''}
+                          value={financingInstallments[item._id] || '1'}
                         />
                       </label>
-                      <button disabled={payingFinancingId === item._id || financingPaidOff(item)} type="submit">
-                        {financingPaidOff(item) ? 'Paid off' : payingFinancingId === item._id ? 'Recording…' : 'Record as paid'}
+                      <label className="financing-payment-locked">
+                        Payment
+                        <input
+                          placeholder="Set expected payment"
+                          readOnly
+                          value={paymentAmount ?? ''}
+                        />
+                      </label>
+                      <label>
+                        Fees / transfer costs
+                        <input
+                          disabled={payingFinancingId === item._id || paymentUnavailable}
+                          min="0"
+                          onChange={(event) => updateFinancingFee(item._id, event.target.value)}
+                          placeholder="0.00"
+                          step="0.01"
+                          type="number"
+                          value={financingFees[item._id] || ''}
+                        />
+                      </label>
+                      {paymentAmount != null && <small>Cash total: {money(paymentAmount + (Number.isFinite(fee) ? fee : 0), forecast.currency)}</small>}
+                      <button disabled={payingFinancingId === item._id || paymentUnavailable} type="submit">
+                        {financingPaidOff(item) ? 'Paid off' : paymentAmount == null ? 'Set expected payment first' : payingFinancingId === item._id ? 'Recording…' : 'Record as paid'}
                       </button>
                     </form>
                     <button className="secondary-button" disabled={Boolean(payingFinancingId)} onClick={() => openFinancingEditor(item)} type="button">Edit financing</button>
                   </article>
-                ))}
+                )})}
               </div>
               </>}
             </>
@@ -961,6 +1054,36 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                 <small className="field-help">Linked payments reduce the balance and payments remaining.</small>
               </label>
             )}
+
+            {form.type === 'expense' && form.financing_item_id && (
+              <>
+                <label>
+                  Applied to loan balance
+                  <input
+                    max={form.amount || undefined}
+                    min="0.01"
+                    onChange={(event) => updateForm('financing_payment_amount', event.target.value)}
+                    placeholder={form.amount || 'Payment amount'}
+                    step="0.01"
+                    type="number"
+                    value={form.financing_payment_amount}
+                  />
+                  <small className="field-help">The difference between the total amount and this value is treated as fees.</small>
+                </label>
+                <label>
+                  Installments paid
+                  <input
+                    min="1"
+                    onChange={(event) => updateForm('financing_installments_paid', event.target.value)}
+                    placeholder="1"
+                    step="1"
+                    type="number"
+                    value={form.financing_installments_paid}
+                  />
+                  <small className="field-help">Use 2 for this month and next month, 3 for three installments, and so on.</small>
+                </label>
+              </>
+            )}
           </div>
 
           <label>
@@ -1042,7 +1165,16 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
 
                     <p>{formatLocalDate(transaction.date)} / {transaction.payment_method || 'No payment method'}</p>
                     {transaction.financing_item_id && (
-                      <p className="transaction-financing-link">Financing: {financingById.get(String(transaction.financing_item_id))?.name || 'Linked account'}</p>
+                      <>
+                        <p className="transaction-financing-link">Financing: {financingById.get(String(transaction.financing_item_id))?.name || 'Linked account'}</p>
+                        <p className="transaction-financing-breakdown">
+                          {money(transaction.financing_payment_amount ?? transaction.amount, transaction.currency)} applied to balance
+                          {' · '}{transaction.financing_installments_paid ?? 1} installment{Number(transaction.financing_installments_paid ?? 1) === 1 ? '' : 's'}
+                          {Number(transaction.amount) > Number(transaction.financing_payment_amount ?? transaction.amount)
+                            ? ` · ${money(Number(transaction.amount) - Number(transaction.financing_payment_amount), transaction.currency)} fees`
+                            : ''}
+                        </p>
+                      </>
                     )}
                     {transaction.note && <p>{transaction.note}</p>}
 

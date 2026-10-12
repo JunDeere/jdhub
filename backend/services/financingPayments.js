@@ -17,10 +17,11 @@ function applyItemAdjustment(item, amountDelta, installmentDelta) {
   }
 
   if (item.installments_remaining != null && installmentDelta) {
-    item.installments_remaining = Math.max(
-      0,
-      Number(item.installments_remaining) - Number(installmentDelta),
-    );
+    const nextInstallments = Number(item.installments_remaining) - Number(installmentDelta);
+    if (nextInstallments < 0) {
+      throw paymentError(`Installments paid exceed the payments remaining for ${item.name}`);
+    }
+    item.installments_remaining = nextInstallments;
   }
 }
 
@@ -45,10 +46,22 @@ async function moveFinancingPayment(userId, previousPayment, nextPayment) {
   if (nextId && !nextItem) throw paymentError('Financing account not found', 404);
 
   if (previousId && previousId === nextId) {
-    applyItemAdjustment(nextItem, Number(nextPayment.amount) - Number(previousPayment.amount), 0);
+    applyItemAdjustment(
+      nextItem,
+      Number(nextPayment.amount) - Number(previousPayment.amount),
+      Number(nextPayment.installments || 1) - Number(previousPayment.installments || 1),
+    );
   } else {
-    if (previousItem) applyItemAdjustment(previousItem, -Number(previousPayment.amount), -1);
-    if (nextItem) applyItemAdjustment(nextItem, Number(nextPayment.amount), 1);
+    if (previousItem) applyItemAdjustment(
+      previousItem,
+      -Number(previousPayment.amount),
+      -Number(previousPayment.installments || 1),
+    );
+    if (nextItem) applyItemAdjustment(
+      nextItem,
+      Number(nextPayment.amount),
+      Number(nextPayment.installments || 1),
+    );
   }
 
   await forecast.save();

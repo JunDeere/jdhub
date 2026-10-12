@@ -34,6 +34,35 @@ function transactionPayload(body) {
     throw error;
   }
 
+  let financingPaymentAmount = null;
+  let financingInstallmentsPaid = null;
+  if (financingItemId) {
+    const supplied = body.financing_payment_amount;
+    financingPaymentAmount = supplied === undefined || supplied === null || supplied === ''
+      ? amount
+      : Number(supplied);
+    if (!Number.isFinite(financingPaymentAmount) || financingPaymentAmount <= 0) {
+      const error = new Error('Amount applied to financing must be greater than zero');
+      error.status = 400;
+      throw error;
+    }
+    if (financingPaymentAmount - amount > 0.005) {
+      const error = new Error('Amount applied to financing cannot exceed the total transaction amount');
+      error.status = 400;
+      throw error;
+    }
+    financingInstallmentsPaid = body.financing_installments_paid === undefined
+      || body.financing_installments_paid === null
+      || body.financing_installments_paid === ''
+      ? 1
+      : Number(body.financing_installments_paid);
+    if (!Number.isInteger(financingInstallmentsPaid) || financingInstallmentsPaid < 1) {
+      const error = new Error('Installments paid must be a whole number of at least one');
+      error.status = 400;
+      throw error;
+    }
+  }
+
   return {
     type: validTypes.includes(body.type) ? body.type : 'expense',
     amount: Number.isFinite(amount) ? amount : 0,
@@ -44,6 +73,8 @@ function transactionPayload(body) {
     payment_method: typeof body.payment_method === 'string' ? body.payment_method.trim() : '',
     note: typeof body.note === 'string' ? body.note.trim() : '',
     financing_item_id: financingItemId,
+    financing_payment_amount: financingPaymentAmount,
+    financing_installments_paid: financingInstallmentsPaid,
     is_recurring: Boolean(body.is_recurring),
     tags: normalizeTags(body.tags),
   };
@@ -106,7 +137,8 @@ router.post('/', async (req, res) => {
     });
     await moveFinancingPayment(req.userId, null, payload.financing_item_id ? {
       financingItemId: payload.financing_item_id,
-      amount: payload.amount,
+      amount: payload.financing_payment_amount,
+      installments: payload.financing_installments_paid,
     } : null);
     const summary = await getMonthlySummary(req.userId, payload.date);
 
@@ -130,11 +162,13 @@ router.patch('/:id', async (req, res) => {
 
     previousPayment = transaction.type === 'expense' && transaction.financing_item_id ? {
       financingItemId: transaction.financing_item_id,
-      amount: transaction.amount,
+      amount: transaction.financing_payment_amount ?? transaction.amount,
+      installments: transaction.financing_installments_paid ?? 1,
     } : null;
     nextPayment = payload.financing_item_id ? {
       financingItemId: payload.financing_item_id,
-      amount: payload.amount,
+      amount: payload.financing_payment_amount,
+      installments: payload.financing_installments_paid,
     } : null;
     await moveFinancingPayment(req.userId, previousPayment, nextPayment);
     financingAdjusted = Boolean(previousPayment || nextPayment);
@@ -162,7 +196,8 @@ router.delete('/:id', async (req, res) => {
 
     previousPayment = transaction.type === 'expense' && transaction.financing_item_id ? {
       financingItemId: transaction.financing_item_id,
-      amount: transaction.amount,
+      amount: transaction.financing_payment_amount ?? transaction.amount,
+      installments: transaction.financing_installments_paid ?? 1,
     } : null;
     if (previousPayment) {
       await moveFinancingPayment(req.userId, previousPayment, null);
@@ -181,4 +216,4 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-module.exports = { router, getMonthlySummary };
+module.exports = { router, getMonthlySummary, transactionPayload };

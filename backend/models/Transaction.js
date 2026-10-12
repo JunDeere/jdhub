@@ -16,6 +16,8 @@ const TransactionSchema = new mongoose.Schema({
   payment_method: { type: String, trim: true },
   note: { type: String, trim: true },
   financing_item_id: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+  financing_payment_amount: { type: Number, min: 0, default: null },
+  financing_installments_paid: { type: Number, min: 1, default: null },
   receipt_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Receipt' },
   is_recurring: { type: Boolean, default: false },
   tags: [{ type: String, trim: true }],
