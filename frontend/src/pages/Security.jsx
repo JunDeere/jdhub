@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  CheckCircle2,
+  CircleAlert,
+  Globe2,
+  KeyRound,
+  MonitorSmartphone,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  XCircle,
+} from "lucide-react";
+import {
   createUser,
   getSecurityOverview,
   getUsers,
   removeTrustedNetwork,
+  revokeOtherSessions,
+  revokeSession,
   revokeTrustedBrowser,
   trustNetwork,
   updateUserEmailVerification,
@@ -19,6 +32,28 @@ function userType(user) {
   if (user.role === "admin") return "Administrator";
   if (user.is_demo) return "Demo account";
   return "Member";
+}
+
+function browserName(value) {
+  const agent = String(value || "");
+  if (/Edg\//.test(agent)) return "Microsoft Edge";
+  if (/OPR\//.test(agent)) return "Opera";
+  if (/Chrome\//.test(agent)) return "Chrome";
+  if (/Firefox\//.test(agent)) return "Firefox";
+  if (/Safari\//.test(agent)) return "Safari";
+  return "Browser session";
+}
+
+function checkIcon(status) {
+  if (status === "pass") return <CheckCircle2 size={16} />;
+  if (status === "critical") return <XCircle size={16} />;
+  return <CircleAlert size={16} />;
+}
+
+function postureLabel(level) {
+  if (level === "good") return "Good protection";
+  if (level === "attention") return "Needs attention";
+  return "High risk";
 }
 
 export default function Security({ token }) {
@@ -39,14 +74,19 @@ export default function Security({ token }) {
   const [creatingUser, setCreatingUser] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState(null);
   const [accountStatus, setAccountStatus] = useState(null);
+  const [securityLoading, setSecurityLoading] = useState(true);
+  const [securityBusy, setSecurityBusy] = useState("");
 
   const loadSecurity = useCallback(async () => {
+    setSecurityLoading(true);
     try {
       const value = await getSecurityOverview(token);
       setSecurityData(value);
       setIp((current) => current || value.currentIp);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSecurityLoading(false);
     }
   }, [token]);
 
@@ -73,12 +113,16 @@ export default function Security({ token }) {
         setIp((current) => current || securityResult.currentIp);
         setUsers(usersResult.users);
         setEmailVerificationEnabled(Boolean(usersResult.emailVerificationEnabled));
+        setSecurityLoading(false);
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
       })
       .finally(() => {
-        if (!cancelled) setUsersLoading(false);
+        if (!cancelled) {
+          setUsersLoading(false);
+          setSecurityLoading(false);
+        }
       });
 
     return () => {
@@ -169,6 +213,34 @@ export default function Security({ token }) {
       await loadSecurity();
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  const endSession = async (id) => {
+    setSecurityBusy(id);
+    setError("");
+    try {
+      await revokeSession(token, id);
+      await loadSecurity();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSecurityBusy("");
+    }
+  };
+
+  const endOtherSessions = async () => {
+    if (!window.confirm("Sign out every other tracked JDHub session?")) return;
+    setSecurityBusy("others");
+    setError("");
+    try {
+      const result = await revokeOtherSessions(token);
+      setAccountStatus({ type: "success", message: `${result.revoked} other sessions signed out.` });
+      await loadSecurity();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSecurityBusy("");
     }
   };
 
@@ -278,32 +350,116 @@ export default function Security({ token }) {
 
       {activeTab === "security" && (
         <div className="administration-security" role="tabpanel">
-          <div className="security-summary">
-            <article><span>Failed sign-ins · 24h</span><strong>{securityData?.failures24h ?? "—"}</strong></article>
-            <article><span>Trusted browsers</span><strong>{securityData?.browsers?.length ?? "—"}</strong></article>
-            <article><span>Trusted networks</span><strong>{securityData?.networks?.length ?? "—"}</strong></article>
+          <div className="security-dashboard-heading">
+            <div>
+              <p className="eyebrow">Security dashboard</p>
+              <h2>Protection and exposure</h2>
+              <p className="muted">Account security, active sessions, configuration checks, and public service posture.</p>
+            </div>
+            <button className="secondary-button" disabled={securityLoading} onClick={loadSecurity} type="button">
+              <RefreshCw className={securityLoading ? "spin" : ""} size={16} />Refresh checks
+            </button>
           </div>
+
+          <section className={`security-posture ${securityData?.posture?.level || "loading"}`}>
+            <div className="security-score">
+              <span>{securityData?.posture?.score ?? "—"}</span>
+              <small>out of 100</small>
+            </div>
+            <div>
+              <span className="security-posture-label"><ShieldCheck size={17} />{postureLabel(securityData?.posture?.level)}</span>
+              <h3>{securityData?.posture?.level === "good" ? "Core protections are in place" : "Review the findings below"}</h3>
+              <p>The score combines server configuration, recent sign-in failures, account verification, and public-service checks.</p>
+            </div>
+          </section>
+
+          <div className="security-summary">
+            <article><span><ShieldAlert size={15} />Failed sign-ins · 24h</span><strong>{securityData?.failures24h ?? "—"}</strong></article>
+            <article><span><MonitorSmartphone size={15} />Active sessions</span><strong>{securityData?.sessions?.length ?? "—"}</strong></article>
+            <article><span><KeyRound size={15} />Trusted browsers</span><strong>{securityData?.browsers?.length ?? "—"}</strong></article>
+            <article><span><Globe2 size={15} />Public services reachable</span><strong>{securityData?.services?.filter((service) => service.reachable).length ?? "—"}/{securityData?.services?.length ?? "—"}</strong></article>
+          </div>
+
+          <article className="panel security-checks-panel">
+            <div className="compact-panel-heading">
+              <div><p className="eyebrow">Application controls</p><h3>Configuration checks</h3></div>
+              <span className="status-chip">No secrets displayed</span>
+            </div>
+            <div className="security-check-grid">
+              {securityData?.posture?.checks?.map((check) => (
+                <div className={`security-check ${check.status}`} key={check.id}>
+                  <span>{checkIcon(check.status)}</span>
+                  <div><strong>{check.label}</strong><p>{check.detail}</p>{check.status !== "pass" && <small>{check.recommendation}</small>}</div>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel security-services-panel">
+            <div className="compact-panel-heading">
+              <div><p className="eyebrow">Public exposure</p><h3>Internet-facing services</h3></div>
+              <span className="status-chip">Live check</span>
+            </div>
+            <p className="muted">Reachability and browser-security headers are checked without signing in or exposing credentials.</p>
+            <div className="security-service-list">
+              {securityData?.services?.map((service) => (
+                <div className="security-service" key={service.name}>
+                  <span className={`service-health ${service.reachable ? "online" : "offline"}`} />
+                  <div className="security-service-name"><strong>{service.name}</strong><small>{service.url}</small></div>
+                  <div className="security-service-response"><strong>{service.reachable ? `HTTP ${service.statusCode}` : service.error}</strong><small>{service.latencyMs} ms</small></div>
+                  <div className="security-header-chips">
+                    <span className={service.https ? "pass" : "fail"}>HTTPS</span>
+                    <span className={service.headers.hsts ? "pass" : "fail"}>HSTS</span>
+                    <span className={service.headers.csp ? "pass" : "warn"}>CSP</span>
+                    <span className={service.headers.noSniff ? "pass" : "fail"}>No-sniff</span>
+                    <span className={service.headers.frameProtection ? "pass" : "fail"}>Frame guard</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
+
           <div className="security-grid">
             <article className="panel">
-              <h3>Recent sign-in activity</h3>
-              <p className="muted">Authentication activity for JDHub. Other subdomains require a future audit-log connection.</p>
-              <div className="security-list">
-                {securityData?.events?.length ? securityData.events.map((event) => (
-                  <div key={event._id}>
-                    <span className={`security-outcome ${event.outcome}`}>{event.outcome}</span>
-                    <div><strong>{event.email || "Unknown account"}</strong><p>{event.detail || event.type}</p><small>{event.ip} · {when(event.createdAt)}</small></div>
+              <div className="compact-panel-heading">
+                <div><p className="eyebrow">Access control</p><h3>Active sessions</h3></div>
+                <button className="secondary-button" disabled={securityBusy === "others" || (securityData?.sessions?.length || 0) < 2} onClick={endOtherSessions} type="button">
+                  {securityBusy === "others" ? "Signing out…" : "Sign out others"}
+                </button>
+              </div>
+              <p className="muted">New sign-ins are tracked individually. Existing sessions from before this update disappear when their token expires or you sign in again.</p>
+              <div className="security-session-list">
+                {securityData?.sessions?.length ? securityData.sessions.map((session) => (
+                  <div className="security-session" key={session._id}>
+                    <span className="security-session-icon"><MonitorSmartphone size={17} /></span>
+                    <div><strong>{browserName(session.user_agent)} {session.current && <em>Current</em>}</strong><p>{session.user_id?.email || "Account"}</p><small>{session.ip} · active {when(session.last_seen_at)} · expires {when(session.expires_at)}</small></div>
+                    <button className="secondary-button" disabled={session.current || securityBusy === session._id} onClick={() => endSession(session._id)} type="button">
+                      {session.current ? "Current" : securityBusy === session._id ? "Revoking…" : "Revoke"}
+                    </button>
                   </div>
-                )) : <p className="muted">No authentication activity recorded yet.</p>}
+                )) : <p className="muted">No tracked sessions yet. Your next sign-in will appear here.</p>}
               </div>
             </article>
+
             <div className="security-side">
               <article className="panel">
-                <h3>Trusted networks</h3>
+                <h3>Trusted browsers</h3>
+                <p className="muted">These browsers can skip the emailed sign-in code until revoked or expired.</p>
+                {securityData?.browsers?.length ? securityData.browsers.map((item) => (
+                  <div className="security-row" key={item._id}>
+                    <div><strong>{item.user_id?.email || "Account"}</strong><small>{item.last_ip} · seen {when(item.last_seen_at)}</small></div>
+                    <button className="secondary-button" onClick={() => revokeBrowser(item._id)} type="button">Revoke trust</button>
+                  </div>
+                )) : <p className="muted">No trusted browsers yet.</p>}
+              </article>
+
+              <article className="panel">
+                <h3>Trusted network labels</h3>
                 <p className="muted">Monitoring labels only. An IP never replaces password or email verification.</p>
                 <form className="security-network-form" onSubmit={addNetwork}>
                   <input aria-label="IP address" value={ip} onChange={(event) => setIp(event.target.value)} placeholder="IP address" required />
                   <input aria-label="Network label" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Home, office…" />
-                  <button type="submit">Trust network</button>
+                  <button type="submit">Add label</button>
                 </form>
                 {securityData?.networks?.map((item) => (
                   <div className="security-row" key={item._id}>
@@ -312,17 +468,20 @@ export default function Security({ token }) {
                   </div>
                 ))}
               </article>
-              <article className="panel">
-                <h3>Trusted browsers</h3>
-                {securityData?.browsers?.length ? securityData.browsers.map((item) => (
-                  <div className="security-row" key={item._id}>
-                    <div><strong>{item.user_id?.email || "Account"}</strong><small>{item.last_ip} · seen {when(item.last_seen_at)}</small></div>
-                    <button className="secondary-button" onClick={() => revokeBrowser(item._id)} type="button">Revoke</button>
-                  </div>
-                )) : <p className="muted">No trusted browsers yet.</p>}
-              </article>
             </div>
           </div>
+
+          <article className="panel security-events-panel">
+            <div className="compact-panel-heading"><div><p className="eyebrow">Audit trail</p><h3>Recent security activity</h3></div><span className="status-chip">90-day retention</span></div>
+            <div className="security-list">
+              {securityData?.events?.length ? securityData.events.map((event) => (
+                <div key={event._id}>
+                  <span className={`security-outcome ${event.outcome}`}>{event.outcome}</span>
+                  <div><strong>{event.email || event.type.replaceAll("_", " ")}</strong><p>{event.detail || event.type.replaceAll("_", " ")}</p><small>{event.ip} · {when(event.createdAt)}</small></div>
+                </div>
+              )) : <p className="muted">No security activity recorded yet.</p>}
+            </div>
+          </article>
         </div>
       )}
       <StatusToast

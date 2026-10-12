@@ -2,6 +2,7 @@ const express = require("express");
 const auth = require("../middleware/auth");
 const requireAdmin = require("../middleware/requireAdmin");
 const bcrypt = require("bcryptjs");
+const AuthSession = require("../models/AuthSession");
 const User = require("../models/User");
 const SecurityEvent = require("../models/SecurityEvent");
 const TrustedBrowser = require("../models/TrustedBrowser");
@@ -9,13 +10,14 @@ const TrustedNetwork = require("../models/TrustedNetwork");
 const { clientIp, recordSecurityEvent } = require("../services/securityAudit");
 const { emailAuthEnabled } = require("../services/securityEmail");
 const { adminEmail, normalizeEmail } = require("../services/siteRoles");
+const { checkMonitoredServices, configurationChecks, scorePosture } = require("../services/securityPosture");
 const router = express.Router();
 router.use(auth, requireAdmin);
 
 router.get("/overview", async (req, res) => {
   try {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [events, browsers, networks, failures24h] = await Promise.all([
+    const [events, browsers, networks, failures24h, sessions, users, services] = await Promise.all([
       SecurityEvent.find().sort({ createdAt: -1 }).limit(100).lean(),
       TrustedBrowser.find({
         revoked_at: { $exists: false },
@@ -29,17 +31,84 @@ router.get("/overview", async (req, res) => {
         outcome: "failure",
         createdAt: { $gte: since },
       }),
+      AuthSession.find({
+        revoked_at: { $exists: false },
+        expires_at: { $gt: new Date() },
+      })
+        .populate("user_id", "email name")
+        .sort({ last_seen_at: -1 })
+        .lean(),
+      User.find().select("email role status is_demo email_verification_required").lean(),
+      checkMonitoredServices(),
     ]);
+    const checks = configurationChecks();
+    const passwordOnlyUsers = users.filter((user) => (
+      user.status !== 'disabled' && !user.is_demo && user.email_verification_required === false
+    )).length;
+    const serviceRisks = services.filter((service) => (
+      !service.reachable || !service.https || !service.headers.noSniff || !service.headers.frameProtection
+    )).length;
     res.json({
       events,
       browsers,
       networks,
       failures24h,
+      sessions: sessions.map((session) => ({
+        ...session,
+        current: String(session._id) === String(req.sessionId || ''),
+      })),
+      posture: {
+        ...scorePosture(checks, { failures24h, passwordOnlyUsers, serviceRisks }),
+        checks,
+        passwordOnlyUsers,
+      },
+      services,
       currentIp: clientIp(req),
       scope: "JDHub authentication traffic",
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.patch("/sessions/revoke-others", async (req, res) => {
+  try {
+    const filter = {
+      revoked_at: { $exists: false },
+      expires_at: { $gt: new Date() },
+    };
+    if (req.sessionId) filter._id = { $ne: req.sessionId };
+    const result = await AuthSession.updateMany(filter, { $set: { revoked_at: new Date() } });
+    await recordSecurityEvent(req, {
+      user_id: req.userId,
+      type: "sessions_revoked",
+      outcome: "success",
+      detail: `Administrator revoked ${result.modifiedCount} other active sessions.`,
+    });
+    return res.json({ ok: true, revoked: result.modifiedCount });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+router.patch("/sessions/:id/revoke", async (req, res) => {
+  try {
+    const session = await AuthSession.findById(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    if (String(session._id) === String(req.sessionId || '')) {
+      return res.status(400).json({ error: "Use Logout to end the current session" });
+    }
+    session.revoked_at = new Date();
+    await session.save();
+    await recordSecurityEvent(req, {
+      user_id: session.user_id,
+      type: "session_revoked",
+      outcome: "success",
+      detail: "Administrator revoked an active session.",
+    });
+    return res.json({ session });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -194,15 +263,16 @@ router.patch("/users/:id/status", async (req, res) => {
     await user.save();
 
     if (status === "disabled") {
-      await TrustedBrowser.updateMany(
-        {
-          user_id: user._id,
-          revoked_at: { $exists: false },
-        },
-        {
-          $set: { revoked_at: new Date() },
-        },
-      );
+      await Promise.all([
+        TrustedBrowser.updateMany(
+          { user_id: user._id, revoked_at: { $exists: false } },
+          { $set: { revoked_at: new Date() } },
+        ),
+        AuthSession.updateMany(
+          { user_id: user._id, revoked_at: { $exists: false } },
+          { $set: { revoked_at: new Date() } },
+        ),
+      ]);
     }
 
     await recordSecurityEvent(req, {

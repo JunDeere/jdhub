@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const AuthSession = require("../models/AuthSession");
 const LoginChallenge = require("../models/LoginChallenge");
 const TrustedBrowser = require("../models/TrustedBrowser");
 const authMiddleware = require("../middleware/auth");
@@ -28,14 +29,31 @@ const router = express.Router();
 const TRUSTED_BROWSER_COOKIE = "jdhub_trusted_browser";
 const TRUSTED_BROWSER_DAYS = Number(process.env.TRUSTED_BROWSER_DAYS || 30);
 
-function createToken(user) {
-  return jwt.sign(
-    { userId: user._id, isDemo: Boolean(user.is_demo) },
+async function createToken(req, user) {
+  const jti = crypto.randomUUID();
+  const token = jwt.sign(
+    {
+      userId: user._id,
+      isDemo: Boolean(user.is_demo),
+      sessionVersion: Number(user.session_version || 0),
+      jti,
+    },
     process.env.JWT_SECRET,
     {
       expiresIn: process.env.JWT_EXPIRES_IN || "1d",
     },
   );
+  const decoded = jwt.decode(token);
+  const context = requestContext(req);
+  await AuthSession.create({
+    user_id: user._id,
+    jti,
+    ip: context.ip,
+    user_agent: context.user_agent,
+    last_seen_at: new Date(),
+    expires_at: new Date(decoded.exp * 1000),
+  });
+  return token;
 }
 
 function serializeUser(user) {
@@ -136,7 +154,7 @@ async function completeLogin(req, user, detail) {
   });
 
   return {
-    token: createToken(user),
+    token: await createToken(req, user),
     user: serializeUser(user),
   };
 }
@@ -348,6 +366,17 @@ router.get("/me", authMiddleware, async (req, res) => {
     res.json({ user: serializeUser(user) });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/logout", authMiddleware, async (req, res) => {
+  try {
+    if (req.sessionId) {
+      await AuthSession.updateOne({ _id: req.sessionId }, { $set: { revoked_at: new Date() } });
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 

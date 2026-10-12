@@ -46,6 +46,12 @@ export const revokeTrustedBrowser = (token, id) =>
     method: "PATCH",
   });
 
+export const revokeSession = (token, id) =>
+  request(`/api/security/sessions/${id}/revoke`, token, { method: "PATCH" });
+
+export const revokeOtherSessions = (token) =>
+  request("/api/security/sessions/revoke-others", token, { method: "PATCH" });
+
 export const createUser = (token, data) =>
   request("/api/security/users", token, {
     method: "POST",

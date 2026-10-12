@@ -103,6 +103,7 @@ test('core private routes reject missing bearer tokens', async () => {
     '/api/notepad-sync/status',
     '/api/notifications',
     '/api/notifications/preferences',
+    '/api/security/overview',
   ];
 
   const responses = await Promise.all(protectedPaths.map((path) => fetch(`${baseUrl}${path}`)));

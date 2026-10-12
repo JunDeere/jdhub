@@ -30,6 +30,7 @@ const UserSchema = new mongoose.Schema(
       connections: { type: Boolean, default: true },
       system: { type: Boolean, default: true },
     },
+    session_version: { type: Number, default: 0, min: 0 },
 
     last_login_at: {
       type: Date,

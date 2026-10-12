@@ -43,7 +43,7 @@ import Scheduling from './pages/Scheduling.jsx';
 import ServerManager from './pages/ServerManager.jsx';
 import Security from './pages/Security.jsx';
 import Tasks from './pages/Tasks.jsx';
-import { getCurrentUser, getHealth, updateCurrentUser } from './api/auth.js';
+import { getCurrentUser, getHealth, logout, updateCurrentUser } from './api/auth.js';
 import { getNotifications, markAllNotificationsRead, updateNotificationState } from './api/notifications.js';
 import { installPortfolioBridge, waitForPortfolioPage } from './portfolioBridge.js';
 
@@ -543,7 +543,8 @@ function PrivateApp() {
     setToken(newToken);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (token) await logout(token).catch(() => {});
     portfolioStopRef.current();
     setPortfolioHighlight(null);
     localStorage.removeItem(STORAGE_KEY);

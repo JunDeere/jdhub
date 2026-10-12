@@ -52,6 +52,15 @@ export async function getCurrentUser(token) {
   return parseJson(response);
 }
 
+export async function logout(token) {
+  const response = await fetch(`${API_BASE}/api/auth/logout`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok && response.status !== 401) return parseJson(response);
+  return { ok: true };
+}
+
 export async function updateCurrentUser(token, { name, phone }) {
   const response = await fetch(`${API_BASE}/api/auth/me`, {
     method: 'PATCH',
