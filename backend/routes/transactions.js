@@ -139,6 +139,7 @@ router.post('/', async (req, res) => {
       financingItemId: payload.financing_item_id,
       amount: payload.financing_payment_amount,
       installments: payload.financing_installments_paid,
+      date: payload.date,
     } : null);
     const summary = await getMonthlySummary(req.userId, payload.date);
 
@@ -164,11 +165,13 @@ router.patch('/:id', async (req, res) => {
       financingItemId: transaction.financing_item_id,
       amount: transaction.financing_payment_amount ?? transaction.amount,
       installments: transaction.financing_installments_paid ?? 1,
+      date: transaction.date,
     } : null;
     nextPayment = payload.financing_item_id ? {
       financingItemId: payload.financing_item_id,
       amount: payload.financing_payment_amount,
       installments: payload.financing_installments_paid,
+      date: payload.date,
     } : null;
     await moveFinancingPayment(req.userId, previousPayment, nextPayment);
     financingAdjusted = Boolean(previousPayment || nextPayment);
@@ -198,6 +201,7 @@ router.delete('/:id', async (req, res) => {
       financingItemId: transaction.financing_item_id,
       amount: transaction.financing_payment_amount ?? transaction.amount,
       installments: transaction.financing_installments_paid ?? 1,
+      date: transaction.date,
     } : null;
     if (previousPayment) {
       await moveFinancingPayment(req.userId, previousPayment, null);

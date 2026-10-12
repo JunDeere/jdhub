@@ -3,6 +3,7 @@ const FinanceForecast = require('../models/FinanceForecast');
 const authMiddleware = require('../middleware/auth');
 const { resolveForecastMatches, serializeForecast } = require('../services/financeForecastResolver');
 const { getCashPosition } = require('../services/financeCashLedger');
+const { hydrateFinancingSchedules } = require('../services/financingPayments');
 const { parseOptionalUtcDate, parseRequiredUtcDate } = require('../utils/dateTime');
 
 const router = express.Router();
@@ -79,6 +80,7 @@ function financingPayload(body) {
     installments_remaining: optionalNumber(body.installments_remaining, 'Payments left'),
     estimated_monthly: optionalNumber(body.estimated_monthly, 'Expected payment'),
     due_day: optionalNumber(body.due_day, 'Due day', { min: 1, max: 31 }),
+    next_due_date: parseOptionalUtcDate(body.next_due_date),
     notes: typeof body.notes === 'string' ? body.notes.trim() : '',
   };
 }
@@ -93,6 +95,7 @@ async function ownedForecast(req) {
 
 async function presentForecast(forecast, userId) {
   if (!forecast) return null;
+  await hydrateFinancingSchedules(forecast, userId);
   const cash = await getCashPosition(forecast, userId);
   return serializeForecast(forecast, new Date(), cash);
 }

@@ -42,3 +42,16 @@ test('review surfaces financing installments due in the next local period', () =
   assert.equal(items[0].amount, 955);
   assert.equal(items[0].financing, true);
 });
+
+test('review does not surface a financing cycle that was already paid', () => {
+  const items = financingDueItems([{
+    _id: 'loan-1',
+    name: 'SPayLater',
+    provider: 'Shopee',
+    due_day: 15,
+    estimated_monthly: 955,
+    next_due_date: new Date('2026-11-15T00:00:00.000Z'),
+  }], new Date('2026-10-14T00:00:00.000Z'), new Date('2026-10-17T00:00:00.000Z'), 'Asia/Manila');
+
+  assert.equal(items.length, 0);
+});

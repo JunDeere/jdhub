@@ -26,6 +26,7 @@ const FinancingItemSchema = new mongoose.Schema({
   installments_remaining: { type: Number, min: 0, default: null },
   estimated_monthly: { type: Number, min: 0, default: null },
   due_day: { type: Number, min: 1, max: 31, default: null },
+  next_due_date: { type: Date, default: null },
   notes: { type: String, trim: true },
 }, { _id: true });
 

@@ -68,6 +68,9 @@ function financingDueItems(financing = [], start, end, timeZone = 'UTC') {
 
     financing.forEach((item) => {
       if (!item.due_day || !item.estimated_monthly) return;
+      if ((item.remaining_balance != null && Number(item.remaining_balance) <= 0)
+        || (item.installments_remaining != null && Number(item.installments_remaining) <= 0)) return;
+      if (item.next_due_date && new Date(cursor) < new Date(item.next_due_date)) return;
       if (parts.day !== Math.min(Number(item.due_day), lastDay)) return;
       dueItems.push({
         _id: item._id,

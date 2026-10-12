@@ -90,6 +90,41 @@ function financingPaymentAmount(item, installments = 1) {
   return Number((remaining == null ? expected : Math.min(expected, remaining)).toFixed(2));
 }
 
+function financingCycleLabel(item) {
+  if (item.cycle_status === 'paid_off') return 'Paid off';
+  if (item.cycle_status === 'paid') {
+    const paidThrough = new Date(item.paid_through_date);
+    const now = new Date();
+    return paidThrough.getUTCFullYear() > now.getUTCFullYear()
+      || (paidThrough.getUTCFullYear() === now.getUTCFullYear() && paidThrough.getUTCMonth() > now.getUTCMonth())
+      ? 'Paid ahead'
+      : 'Paid this month';
+  }
+  if (item.cycle_status === 'overdue') return 'Overdue';
+  if (item.cycle_status === 'due_today') return 'Due today';
+  if (item.cycle_status === 'upcoming') return 'Due this month';
+  return 'No schedule';
+}
+
+function financingDateLabel(value) {
+  if (!value) return 'No due date';
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(value));
+}
+
+function financingMonthLabel(value) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(value));
+}
+
 export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ income: 0, expense: 0, transfer: 0, net: 0 });
@@ -118,6 +153,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
   const [forecastRange, setForecastRange] = useState('month');
   const [financingFees, setFinancingFees] = useState({});
   const [financingInstallments, setFinancingInstallments] = useState({});
+  const [financingAdvanceOpen, setFinancingAdvanceOpen] = useState({});
   const [payingFinancingId, setPayingFinancingId] = useState(null);
 
   const financingProviders = useMemo(() => (
@@ -164,6 +200,9 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
         || String(item.due_day) === financingDueDay;
 
       return matchesSearch && matchesProvider && matchesDueDay;
+    }).sort((left, right) => {
+      const rank = { overdue: 0, due_today: 0, upcoming: 1, unscheduled: 1, paid: 2, paid_off: 3 };
+      return (rank[left.cycle_status] ?? 1) - (rank[right.cycle_status] ?? 1);
     });
   }, [forecast, financingDueDay, financingProvider, financingSearch]);
 
@@ -171,10 +210,15 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
     const records = forecast?.financing || [];
     const knownBalances = records.filter((item) => Number.isFinite(Number(item.remaining_balance)));
     const knownPayments = records.filter((item) => Number.isFinite(Number(item.estimated_monthly)));
+    const dueNow = knownPayments.filter((item) => ['overdue', 'due_today', 'upcoming'].includes(item.cycle_status));
+    const paidThisMonth = records.filter((item) => item.cycle_status === 'paid');
 
     return {
       outstanding: knownBalances.reduce((total, item) => total + Number(item.remaining_balance), 0),
       monthlyCommitment: knownPayments.reduce((total, item) => total + Number(item.estimated_monthly), 0),
+      dueNow: dueNow.reduce((total, item) => total + Number(item.estimated_monthly), 0),
+      dueNowCount: dueNow.length,
+      paidThisMonthCount: paidThisMonth.length,
       knownBalanceCount: knownBalances.length,
       knownPaymentCount: knownPayments.length,
     };
@@ -434,6 +478,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
       });
       setFinancingFees((current) => ({ ...current, [item._id]: '' }));
       setFinancingInstallments((current) => ({ ...current, [item._id]: '1' }));
+      setFinancingAdvanceOpen((current) => ({ ...current, [item._id]: false }));
       await loadTransactions();
       onTransactionsChanged?.();
       setStatusMessage(`${money(amount, forecast?.currency)} payment recorded for ${item.name}.`);
@@ -504,6 +549,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
         installments_remaining: item?.installments_remaining ?? '',
         estimated_monthly: item?.estimated_monthly ?? '',
         due_day: item?.due_day ?? '',
+        next_due_date: item?.next_due_date ? toUtcDateInput(item.next_due_date) : '',
         notes: item?.notes || '',
       },
     });
@@ -578,9 +624,9 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
             <small>{financingSnapshot.knownBalanceCount} of {forecast.financing?.length || 0} balances supplied</small>
           </div>
           <div className="finance-dashboard-card">
-            <span>Monthly installments</span>
-            <strong>{money(financingSnapshot.monthlyCommitment, forecast.currency)}</strong>
-            <small>{financingSnapshot.knownPaymentCount} known payment amounts</small>
+            <span>Installments still due</span>
+            <strong>{money(financingSnapshot.dueNow, forecast.currency)}</strong>
+            <small>{financingSnapshot.paidThisMonthCount} covered this month · {financingSnapshot.dueNowCount} still due</small>
           </div>
           <div className="finance-dashboard-card projected">
             <span>Projected cash</span>
@@ -841,16 +887,34 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                       const paymentAmount = financingPaymentAmount(item, installments);
                       const paymentUnavailable = financingPaidOff(item) || paymentAmount == null;
                       const fee = Number(financingFees[item._id] || 0);
+                      const paidCurrentCycle = item.cycle_status === 'paid';
+                      const advanceOpen = Boolean(financingAdvanceOpen[item._id]);
                       return (
                       <tr key={item._id}>
                         <td><strong>{item.name}</strong><small>{item.provider || 'Financing'}</small></td>
                         <td>{item.remaining_balance == null ? 'Not provided' : money(item.remaining_balance, forecast.currency)}</td>
                         <td>{item.installments_remaining == null ? 'Variable' : item.installments_remaining}</td>
                         <td>{item.estimated_monthly == null ? 'Variable' : money(item.estimated_monthly, forecast.currency)}</td>
-                        <td>{item.due_day ? `Day ${item.due_day}` : 'Varies'}</td>
+                        <td>
+                          <span className={`financing-cycle-badge ${item.cycle_status || 'unscheduled'}`}>{financingCycleLabel(item)}</span>
+                          <small className="financing-cycle-date">
+                            {item.cycle_status === 'paid_off'
+                              ? 'No payments remaining'
+                              : `Next: ${financingDateLabel(item.next_due_date)}`}
+                          </small>
+                        </td>
                         <td className="financing-notes">{item.notes || '—'}</td>
                         <td>
-                          <form className="financing-payment-form" onSubmit={(event) => recordFinancingPayment(event, item)}>
+                          {paidCurrentCycle && !advanceOpen ? (
+                            <div className="financing-cycle-paid-action">
+                              <strong>Paid through {financingMonthLabel(item.paid_through_date)}</strong>
+                              <small>Nothing else is due for the current cycle.</small>
+                              <div>
+                                <button onClick={() => setFinancingAdvanceOpen((current) => ({ ...current, [item._id]: true }))} type="button">Record advance</button>
+                                <button className="table-action-button" disabled={Boolean(payingFinancingId)} onClick={() => openFinancingEditor(item)} type="button">Edit</button>
+                              </div>
+                            </div>
+                          ) : <form className="financing-payment-form" onSubmit={(event) => recordFinancingPayment(event, item)}>
                             <label>
                               <span>Installments</span>
                               <input
@@ -887,11 +951,12 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                               />
                             </label>
                             <button disabled={payingFinancingId === item._id || paymentUnavailable} type="submit">
-                              {financingPaidOff(item) ? 'Paid off' : paymentAmount == null ? 'Set amount' : payingFinancingId === item._id ? 'Saving…' : 'Paid'}
+                              {financingPaidOff(item) ? 'Paid off' : paymentAmount == null ? 'Set amount' : payingFinancingId === item._id ? 'Saving…' : paidCurrentCycle ? 'Pay ahead' : 'Paid'}
                             </button>
                             <button className="table-action-button" disabled={Boolean(payingFinancingId)} onClick={() => openFinancingEditor(item)} type="button">Edit</button>
+                            {advanceOpen && <button className="table-action-button" disabled={Boolean(payingFinancingId)} onClick={() => setFinancingAdvanceOpen((current) => ({ ...current, [item._id]: false }))} type="button">Cancel</button>}
                             {paymentAmount != null && <small>Cash total: {money(paymentAmount + (Number.isFinite(fee) ? fee : 0), forecast.currency)}</small>}
-                          </form>
+                          </form>}
                         </td>
                       </tr>
                     )})}
@@ -905,17 +970,25 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                   const paymentAmount = financingPaymentAmount(item, installments);
                   const paymentUnavailable = financingPaidOff(item) || paymentAmount == null;
                   const fee = Number(financingFees[item._id] || 0);
+                  const paidCurrentCycle = item.cycle_status === 'paid';
+                  const advanceOpen = Boolean(financingAdvanceOpen[item._id]);
                   return (
                   <article key={item._id}>
-                    <div><strong>{item.name}</strong><span>{item.provider || 'Financing'}</span></div>
+                    <div><strong>{item.name}</strong><span>{item.provider || 'Financing'}</span><span className={`financing-cycle-badge ${item.cycle_status || 'unscheduled'}`}>{financingCycleLabel(item)}</span></div>
                     <dl>
                       <div><dt>Remaining</dt><dd>{item.remaining_balance == null ? 'Not provided' : money(item.remaining_balance, forecast.currency)}</dd></div>
                       <div><dt>Payments left</dt><dd>{item.installments_remaining == null ? 'Variable' : item.installments_remaining}</dd></div>
                       <div><dt>Expected payment</dt><dd>{item.estimated_monthly == null ? 'Variable' : money(item.estimated_monthly, forecast.currency)}</dd></div>
-                      <div><dt>Due</dt><dd>{item.due_day ? `Day ${item.due_day}` : 'Varies'}</dd></div>
+                      <div><dt>Next due</dt><dd>{item.cycle_status === 'paid_off' ? 'None' : financingDateLabel(item.next_due_date)}</dd></div>
                     </dl>
                     {item.notes && <p>{item.notes}</p>}
-                    <form className="financing-payment-form financing-payment-mobile" onSubmit={(event) => recordFinancingPayment(event, item)}>
+                    {paidCurrentCycle && !advanceOpen ? (
+                      <div className="financing-cycle-paid-action">
+                        <strong>Paid through {financingMonthLabel(item.paid_through_date)}</strong>
+                        <small>Nothing else is due for the current cycle.</small>
+                        <button onClick={() => setFinancingAdvanceOpen((current) => ({ ...current, [item._id]: true }))} type="button">Record an advance payment</button>
+                      </div>
+                    ) : <form className="financing-payment-form financing-payment-mobile" onSubmit={(event) => recordFinancingPayment(event, item)}>
                       <label>
                         Installments paid
                         <input
@@ -950,9 +1023,10 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                       </label>
                       {paymentAmount != null && <small>Cash total: {money(paymentAmount + (Number.isFinite(fee) ? fee : 0), forecast.currency)}</small>}
                       <button disabled={payingFinancingId === item._id || paymentUnavailable} type="submit">
-                        {financingPaidOff(item) ? 'Paid off' : paymentAmount == null ? 'Set expected payment first' : payingFinancingId === item._id ? 'Recording…' : 'Record as paid'}
+                        {financingPaidOff(item) ? 'Paid off' : paymentAmount == null ? 'Set expected payment first' : payingFinancingId === item._id ? 'Recording…' : paidCurrentCycle ? 'Record advance payment' : 'Record as paid'}
                       </button>
-                    </form>
+                      {advanceOpen && <button className="table-action-button" disabled={Boolean(payingFinancingId)} onClick={() => setFinancingAdvanceOpen((current) => ({ ...current, [item._id]: false }))} type="button">Cancel advance</button>}
+                    </form>}
                     <button className="secondary-button" disabled={Boolean(payingFinancingId)} onClick={() => openFinancingEditor(item)} type="button">Edit financing</button>
                   </article>
                 )})}
@@ -1261,6 +1335,7 @@ export default function Finance({ token, refreshKey, onTransactionsChanged }) {
                   <label>Payments left<input min="0" step="1" type="number" value={financeEditor.values.installments_remaining} onChange={(event) => updateEditor('installments_remaining', event.target.value)} /></label>
                   <label>Expected payment<input min="0" step="0.01" type="number" value={financeEditor.values.estimated_monthly} onChange={(event) => updateEditor('estimated_monthly', event.target.value)} /></label>
                   <label>Due day<input max="31" min="1" step="1" type="number" value={financeEditor.values.due_day} onChange={(event) => updateEditor('due_day', event.target.value)} placeholder="15" /></label>
+                  <label>Next due date<input type="date" value={financeEditor.values.next_due_date} onChange={(event) => updateEditor('next_due_date', event.target.value)} /></label>
                 </div>
                 <label>Notes<textarea rows={3} value={financeEditor.values.notes} onChange={(event) => updateEditor('notes', event.target.value)} /></label>
               </>

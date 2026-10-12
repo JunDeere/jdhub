@@ -1,4 +1,5 @@
 const Transaction = require('../models/Transaction');
+const { financingCycleStatus } = require('./financingPayments');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -84,6 +85,11 @@ function serializeForecast(document, now = new Date(), cashPosition = null) {
         projected_balance: Number(balance.toFixed(2)),
       };
     });
+
+  forecast.financing = (forecast.financing || []).map((item) => ({
+    ...item,
+    ...financingCycleStatus(item, now),
+  }));
 
   forecast.summary = {
     total_income: Number(totalIncome.toFixed(2)),

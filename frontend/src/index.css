@@ -6674,6 +6674,74 @@ h3 {
   opacity: 0.6;
 }
 
+.financing-cycle-badge {
+  display: inline-flex;
+  width: max-content;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--muted);
+  padding: 4px 7px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.financing-cycle-badge.paid,
+.financing-cycle-badge.paid_off {
+  background: color-mix(in srgb, var(--success, #12b76a) 18%, transparent);
+  color: var(--success, #12b76a);
+}
+
+.financing-cycle-badge.overdue {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
+.financing-cycle-badge.due_today {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
+}
+
+.financing-cycle-date {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.financing-cycle-paid-action {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.financing-cycle-paid-action > strong {
+  color: var(--success, #12b76a);
+  font-size: 12px;
+}
+
+.financing-cycle-paid-action > small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.financing-cycle-paid-action > div {
+  display: flex;
+  gap: 6px;
+}
+
+.financing-cycle-paid-action button {
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
 .financing-payment-mobile {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   min-width: 0;
