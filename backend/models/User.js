@@ -23,6 +23,13 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    notification_preferences: {
+      tasks: { type: Boolean, default: true },
+      schedule: { type: Boolean, default: true },
+      finance: { type: Boolean, default: true },
+      connections: { type: Boolean, default: true },
+      system: { type: Boolean, default: true },
+    },
 
     last_login_at: {
       type: Date,

@@ -101,6 +101,8 @@ test('core private routes reject missing bearer tokens', async () => {
     '/api/google-calendar/status',
     '/api/mcp/capabilities',
     '/api/notepad-sync/status',
+    '/api/notifications',
+    '/api/notifications/preferences',
   ];
 
   const responses = await Promise.all(protectedPaths.map((path) => fetch(`${baseUrl}${path}`)));

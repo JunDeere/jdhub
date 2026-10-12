@@ -19,11 +19,14 @@ import {
   Send,
   Server,
   Settings,
+  CheckCheck,
+  X,
 } from 'lucide-react';
 import { getCountries, getCountryCallingCode, parsePhoneNumberFromString } from 'libphonenumber-js/min';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import CommandCenter from './pages/CommandCenter.jsx';
 import ConnectionCenter from './components/ConnectionCenter.jsx';
+import NotificationPreferences from './components/NotificationPreferences.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Diary from './pages/Diary.jsx';
@@ -40,8 +43,8 @@ import Scheduling from './pages/Scheduling.jsx';
 import ServerManager from './pages/ServerManager.jsx';
 import Security from './pages/Security.jsx';
 import Tasks from './pages/Tasks.jsx';
-import { getCurrentUser, getDashboard, getHealth, updateCurrentUser } from './api/auth.js';
-import { buildAttentionItems } from './utils/attention.js';
+import { getCurrentUser, getHealth, updateCurrentUser } from './api/auth.js';
+import { getNotifications, markAllNotificationsRead, updateNotificationState } from './api/notifications.js';
 import { installPortfolioBridge, waitForPortfolioPage } from './portfolioBridge.js';
 
 const STORAGE_KEY = 'jdhubToken';
@@ -207,64 +210,6 @@ function getNextThemeMode(theme) {
   return 'system';
 }
 
-function buildNotifications(dashboard, health) {
-  if (!dashboard) return [];
-
-  const items = [...buildAttentionItems(dashboard)];
-
-  if (!dashboard.recentEntries?.length) {
-    items.push({
-      id: 'first-note',
-      title: 'Write your first note',
-      detail: 'Use Notes for quick thoughts, fixes, and incidents.',
-      action: 'Open Notes',
-      page: 'life-log',
-    });
-  }
-
-  if (!dashboard.openTasks?.length) {
-    items.push({
-      id: 'first-task',
-      title: 'Create your first task',
-      detail: 'Track the next action you want JDHub to remember.',
-      action: 'Open Tasks',
-      page: 'tasks',
-    });
-  }
-
-  if (!dashboard.activeProjects?.length) {
-    items.push({
-      id: 'first-project',
-      title: 'Add a project',
-      detail: 'Group builds, maintenance work, and longer ideas.',
-      action: 'Open Projects',
-      page: 'projects',
-    });
-  }
-
-  if (!dashboard.financeSummary?.income && !dashboard.financeSummary?.expense) {
-    items.push({
-      id: 'first-transaction',
-      title: 'Log a transaction',
-      detail: 'Start monthly finance totals with income or expenses.',
-      action: 'Open Finance',
-      page: 'finance',
-    });
-  }
-
-  if (health?.status !== 'ok' || health?.services?.database !== 'connected') {
-    items.push({
-      id: 'system-warning',
-      title: 'System status needs attention',
-      detail: 'API or database health is not fully available.',
-      action: 'View status',
-      page: 'module-status',
-    });
-  }
-
-  return items;
-}
-
 function ThemeControls({ theme, resolvedTheme, onThemeChange }) {
   return (
     <div className="theme-controls">
@@ -419,7 +364,7 @@ function ProfileSettings({ token, user, onUserChange }) {
   );
 }
 
-function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUserChange, onNavigate }) {
+function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUserChange, onNavigate, onNotificationsChanged }) {
   return (
     <section className="module-page">
       <div className="page-heading">
@@ -444,6 +389,8 @@ function SettingsPage({ token, user, theme, resolvedTheme, onThemeChange, onUser
       </div>
 
       <ConnectionCenter token={token} user={user} onNavigate={onNavigate} />
+
+      <NotificationPreferences token={token} onChanged={onNotificationsChanged} />
 
       <div className="panel">
         <ThemeControls
@@ -492,7 +439,9 @@ function PrivateApp() {
   const [pageHistory, setPageHistory] = useState([]);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [moduleRefreshKey, setModuleRefreshKey] = useState(0);
-  const [notificationDashboard, setNotificationDashboard] = useState(null);
+  const [notificationData, setNotificationData] = useState({ notifications: [], unreadCount: 0, preferences: {} });
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationError, setNotificationError] = useState('');
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [assistantMode, setAssistantMode] = useState('closed');
   const [assistantWidth, setAssistantWidth] = useState(() => {
@@ -530,7 +479,7 @@ function PrivateApp() {
         localStorage.removeItem(STORAGE_KEY);
         setToken(null);
         setUser(null);
-        setNotificationDashboard(null);
+        setNotificationData({ notifications: [], unreadCount: 0, preferences: {} });
       })
       .finally(() => {
         if (!cancelled) setCheckingSession(false);
@@ -541,13 +490,29 @@ function PrivateApp() {
     };
   }, [token]);
 
-  useEffect(() => {
+  const refreshNotifications = useCallback(async () => {
     if (!token) return;
+    setNotificationsLoading(true);
+    try {
+      setNotificationData(await getNotifications(token));
+      setNotificationError('');
+    } catch (error) {
+      setNotificationError(error.message);
+      setNotificationData((current) => ({ ...current, notifications: [], unreadCount: 0 }));
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, [token]);
 
-    getDashboard(token)
-      .then(setNotificationDashboard)
-      .catch(() => setNotificationDashboard(null));
-  }, [token, dashboardRefreshKey]);
+  useEffect(() => {
+    if (!token) return undefined;
+    const initial = window.setTimeout(refreshNotifications, 0);
+    const interval = window.setInterval(refreshNotifications, 60000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, [token, dashboardRefreshKey, refreshNotifications]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -584,7 +549,7 @@ function PrivateApp() {
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
     setToken(null);
-    setNotificationDashboard(null);
+    setNotificationData({ notifications: [], unreadCount: 0, preferences: {} });
     setAssistantMode('closed');
     setTopbarPrompt('');
     setCheckingSession(false);
@@ -599,6 +564,26 @@ function PrivateApp() {
   const handleDataChanged = useCallback(() => {
     setDashboardRefreshKey((key) => key + 1);
   }, []);
+
+  const changeNotificationState = async (fingerprint, state) => {
+    try {
+      setNotificationData(await updateNotificationState(token, fingerprint, state));
+      setNotificationError('');
+      return true;
+    } catch (error) {
+      setNotificationError(error.message);
+      return false;
+    }
+  };
+
+  const readAllNotifications = async () => {
+    try {
+      setNotificationData(await markAllNotificationsRead(token));
+      setNotificationError('');
+    } catch (error) {
+      setNotificationError(error.message);
+    }
+  };
 
   const handleAssistantDataChanged = useCallback(() => {
     setDashboardRefreshKey((key) => key + 1);
@@ -715,7 +700,8 @@ function PrivateApp() {
 
   const activeItem = findNavItem(activePage);
   const canGoBack = pageHistory.length > 0 && activePage !== 'dashboard';
-  const notifications = buildNotifications(notificationDashboard, health);
+  const notifications = notificationData.notifications || [];
+  const unreadCount = notificationData.unreadCount || 0;
   const currentPage = activePage === 'dashboard'
     ? <Dashboard token={token} user={user} refreshKey={dashboardRefreshKey} onNavigate={navigateToPage} />
     : activePage === 'command-center'
@@ -732,6 +718,7 @@ function PrivateApp() {
           onThemeChange={setTheme}
           onUserChange={setUser}
           onNavigate={navigateToPage}
+          onNotificationsChanged={refreshNotifications}
         />
       )
     : activePage === 'module-status'
@@ -889,34 +876,48 @@ function PrivateApp() {
                     type="button"
                   >
                     <Bell size={18} />
-                    {notifications.length > 0 && <span>{notifications.length}</span>}
+                    {unreadCount > 0 && <span>{unreadCount > 99 ? '99+' : unreadCount}</span>}
                   </button>
                   {notificationsOpen && (
                     <div className="notification-menu">
                       <div className="notification-menu-header">
-                        <strong>Notifications</strong>
-                        <small>{notifications.length} active</small>
+                        <div><strong>Notifications</strong><small>{unreadCount} unread · {notifications.length} active</small></div>
+                        <button
+                          className="notification-read-all"
+                          disabled={!unreadCount}
+                          onClick={readAllNotifications}
+                          type="button"
+                        ><CheckCheck size={15} />Mark all read</button>
                       </div>
-                      {notifications.length === 0 ? (
-                        <p className="muted">No active notifications.</p>
+                      {notificationError && <div className="notification-error">{notificationError}</div>}
+                      {notificationsLoading && notifications.length === 0 ? (
+                        <p className="muted">Checking for alerts…</p>
+                      ) : notifications.length === 0 ? (
+                        <div className="notification-empty"><CheckCheck size={22} /><strong>You're all caught up</strong><p>No active alerts need your attention.</p></div>
                       ) : (
                         <div className="notification-menu-list">
-                          {notifications.slice(0, 6).map((item) => (
-                            <article className="notification-menu-item" key={item.id}>
-                              <div>
-                                <strong>{item.title}</strong>
-                                <p>{item.detail}</p>
-                              </div>
+                          {notifications.map((item) => (
+                            <article className={`notification-menu-item ${item.read ? 'is-read' : 'is-unread'} priority-${item.priority}`} key={item.fingerprint}>
                               <button
-                                className="secondary-button"
-                                onClick={() => {
+                                className="notification-main"
+                                onClick={async () => {
+                                  if (!item.read) await changeNotificationState(item.fingerprint, { read: true });
                                   navigateToPage(item.page);
                                   setNotificationsOpen(false);
                                 }}
                                 type="button"
                               >
-                                {item.action}
+                                <span className="notification-dot" />
+                                <span><small>{item.category}</small><strong>{item.title}</strong>
+                                <p>{item.detail}</p>
+                                <em>{item.action}</em></span>
                               </button>
+                              <button
+                                aria-label={`Dismiss ${item.title}`}
+                                className="notification-dismiss"
+                                onClick={() => changeNotificationState(item.fingerprint, { dismissed: true })}
+                                type="button"
+                              ><X size={15} /></button>
                             </article>
                           ))}
                         </div>
