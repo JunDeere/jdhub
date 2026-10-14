@@ -1,3 +1,5 @@
+const { configuredAllowedOrigins } = require('../config/security');
+
 const DEFAULT_TARGETS = [
   ['JDHub', 'https://jdhub.jdeere.net'],
   ['TindaHub', 'https://tindahub.jdeere.net'],
@@ -15,10 +17,16 @@ function configuredTargets() {
 }
 
 function configurationChecks() {
-  const cors = String(process.env.CORS_ORIGIN || process.env.CORS_ORIGINS || '');
+  let corsValid = false;
+  try {
+    corsValid = configuredAllowedOrigins(process.env).length > 0;
+  } catch {
+    corsValid = false;
+  }
   const jwtSecret = String(process.env.JWT_SECRET || '');
   const production = process.env.APP_ENV === 'production';
   const googleConfigured = Boolean(process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_SECRET);
+  const apiRateLimit = Number(process.env.API_RATE_LIMIT_MAX || 600);
   return [
     {
       id: 'production-mode',
@@ -57,8 +65,8 @@ function configurationChecks() {
     {
       id: 'cors',
       label: 'Browser origin policy',
-      status: cors && !cors.split(',').map((value) => value.trim()).includes('*') ? 'pass' : 'critical',
-      detail: cors && !cors.includes('*') ? 'Browser access is restricted to named origins.' : 'Browser access is missing an explicit origin allowlist.',
+      status: corsValid ? 'pass' : 'critical',
+      detail: corsValid ? 'Browser access is restricted to valid named origins.' : 'Browser access is missing a valid explicit origin allowlist.',
       recommendation: 'Set CORS_ORIGINS to the exact HTTPS application origins.',
       weight: 18,
     },
@@ -87,6 +95,16 @@ function configurationChecks() {
       detail: `Sign-in attempts are limited to ${Number(process.env.AUTH_RATE_LIMIT_MAX || 20)} per window.`,
       recommendation: 'Keep the authentication limit at 30 attempts or fewer per window.',
       weight: 8,
+    },
+    {
+      id: 'api-rate-limit',
+      label: 'API request limit',
+      status: Number.isFinite(apiRateLimit) && apiRateLimit > 0 && apiRateLimit <= 2000 ? 'pass' : 'warning',
+      detail: Number.isFinite(apiRateLimit) && apiRateLimit > 0
+        ? `API clients are limited to ${apiRateLimit} requests per window.`
+        : 'The API request limit is invalid and will use the safe default.',
+      recommendation: 'Keep API_RATE_LIMIT_MAX at 2,000 requests or fewer per window.',
+      weight: 6,
     },
   ];
 }

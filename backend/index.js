@@ -25,7 +25,13 @@ const notepadSyncRoutes = require('./routes/notepadSync');
 const notificationRoutes = require('./routes/notifications');
 const { router: transactionRoutes, getMonthlySummary } = require('./routes/transactions');
 const authMiddleware = require('./middleware/auth');
-const { authRateLimit, corsMiddleware, securityHeaders } = require('./config/security');
+const {
+  apiRateLimit,
+  authRateLimit,
+  corsErrorHandler,
+  corsMiddleware,
+  securityHeaders,
+} = require('./config/security');
 const Entry = require('./models/Entry');
 const Reminder = require('./models/Reminder');
 const ScheduleItem = require('./models/ScheduleItem');
@@ -58,6 +64,7 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.use('/api', apiRateLimit());
 app.use('/api/auth', authRateLimit(), authRoutes);
 app.use('/api/commands', commandRoutes);
 app.use('/api/diary', diaryRoutes);
@@ -202,6 +209,8 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+app.use(corsErrorHandler);
 
 function startServer() {
   connectDB(process.env.MONGO_URI || 'mongodb://localhost:27017/jdhub')

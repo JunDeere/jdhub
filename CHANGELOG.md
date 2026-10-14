@@ -5,6 +5,9 @@ and remains in the `0.x` pre-stable phase.
 
 ## Unreleased
 
+- Hardened browser access to fail closed without a valid explicit CORS
+  allowlist and added general API rate limiting beneath the stricter
+  authentication limit.
 - Final documentation review and release verification before the next push.
 - Added administrator-controlled per-account email verification policies while
   retaining the server-wide master switch and mandatory protection for the

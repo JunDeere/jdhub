@@ -180,6 +180,13 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
 Set a strong `JWT_SECRET`, production `CORS_ORIGINS`, and any reverse-proxy HTTPS settings before exposing JDHub.
+`CORS_ORIGINS` is required when `APP_ENV=production` and must be a comma-separated
+list of exact HTTP(S) origins without paths or wildcards. Browser requests from
+other origins are rejected; native and server clients without an `Origin` header
+remain supported and still require normal authentication.
+The general API limit defaults to 600 requests per client IP every 15 minutes via
+`API_RATE_LIMIT_MAX` and `API_RATE_LIMIT_WINDOW_MS`. Authentication routes also
+use the stricter `AUTH_RATE_LIMIT_MAX` and `AUTH_RATE_LIMIT_WINDOW_MS` settings.
 Set `PUBLIC_SHARE_ORIGIN=https://share.jdeere.net` for 24-hour external file links, and include both the private JDHub origin and the share origin in `CORS_ORIGINS`.
 
 ### Google Calendar

@@ -9,6 +9,7 @@ const original = {
   EMAIL_AUTH_REQUIRED: process.env.EMAIL_AUTH_REQUIRED,
   CORS_ORIGINS: process.env.CORS_ORIGINS,
   TRUST_PROXY: process.env.TRUST_PROXY,
+  API_RATE_LIMIT_MAX: process.env.API_RATE_LIMIT_MAX,
   AUTH_RATE_LIMIT_MAX: process.env.AUTH_RATE_LIMIT_MAX,
   SECURITY_MONITORED_SERVICES: process.env.SECURITY_MONITORED_SERVICES,
 };
@@ -27,11 +28,21 @@ test('security posture rewards hardened application settings', () => {
   process.env.EMAIL_AUTH_REQUIRED = 'true';
   process.env.CORS_ORIGINS = 'https://jdhub.example.com';
   process.env.TRUST_PROXY = '1';
+  process.env.API_RATE_LIMIT_MAX = '600';
   process.env.AUTH_RATE_LIMIT_MAX = '20';
 
   const checks = configurationChecks();
   assert.equal(checks.every((check) => check.status === 'pass'), true);
   assert.deepEqual(scorePosture(checks), { score: 100, level: 'good' });
+});
+
+test('security posture rejects malformed browser origins and unsafe API limits', () => {
+  process.env.CORS_ORIGINS = 'https://jdhub.example.com/api';
+  process.env.API_RATE_LIMIT_MAX = '5000';
+
+  const checks = configurationChecks();
+  assert.equal(checks.find((check) => check.id === 'cors').status, 'critical');
+  assert.equal(checks.find((check) => check.id === 'api-rate-limit').status, 'warning');
 });
 
 test('security posture penalizes critical settings and active risk signals', () => {
