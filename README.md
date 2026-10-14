@@ -184,6 +184,9 @@ Set a strong `JWT_SECRET`, production `CORS_ORIGINS`, and any reverse-proxy HTTP
 list of exact HTTP(S) origins without paths or wildcards. Browser requests from
 other origins are rejected; native and server clients without an `Origin` header
 remain supported and still require normal authentication.
+Set `TRUST_PROXY` to the verified number of proxy hops between the client and
+Express. The Acer route `Cloudflare Tunnel -> frontend Nginx -> backend` uses
+`TRUST_PROXY=2`; a conventional single reverse proxy uses `1`.
 The general API limit defaults to 600 requests per client IP every 15 minutes via
 `API_RATE_LIMIT_MAX` and `API_RATE_LIMIT_WINDOW_MS`. Authentication routes also
 use the stricter `AUTH_RATE_LIMIT_MAX` and `AUTH_RATE_LIMIT_WINDOW_MS` settings.

@@ -12,7 +12,7 @@ services:
     environment:
       - APP_ENV=production
       - NODE_OPTIONS=${JDHUB_NODE_OPTIONS:---max-old-space-size=256}
-      - TRUST_PROXY=1
+      - TRUST_PROXY=${TRUST_PROXY:-1}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
       - API_RATE_LIMIT_WINDOW_MS=${API_RATE_LIMIT_WINDOW_MS:-900000}
       - API_RATE_LIMIT_MAX=${API_RATE_LIMIT_MAX:-600}
