@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, History, Maximize2, Minimize2, Search, Send, X } from 'lucide-react';
+import { Bot, ChevronDown, History, Maximize2, Mic, Minimize2, Search, Send, Square, X } from 'lucide-react';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import {
   askCommandAi,
@@ -8,6 +8,12 @@ import {
   getCommandHistory,
 } from '../api/commands.js';
 import { formatLocalDateTime } from '../utils/dateTime.js';
+import {
+  combineSpeechDraft,
+  getSpeechRecognitionConstructor,
+  speechRecognitionErrorMessage,
+  transcriptFromResults,
+} from '../utils/speechRecognition.js';
 
 const assistantExamples = [
   'Find my notes about nginx',
@@ -66,9 +72,82 @@ const CommandCenter = forwardRef(function CommandCenter({
   const [working, setWorking] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [error, setError] = useState(null);
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState(null);
+  const speechSupported = typeof window !== 'undefined'
+    && Boolean(getSpeechRecognitionConstructor(window));
   const composerRef = useRef(null);
   const messagesRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
+  const recognitionRef = useRef(null);
+  const speechBaseDraftRef = useRef('');
+
+  const stopListening = useCallback(() => {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) {
+      recognition.onend = null;
+      recognition.stop();
+    }
+    setListening(false);
+  }, []);
+
+  const toggleListening = useCallback(() => {
+    if (listening) {
+      stopListening();
+      return;
+    }
+
+    const SpeechRecognition = getSpeechRecognitionConstructor(window);
+    if (!SpeechRecognition) {
+      setVoiceError('Voice input is not supported in this browser.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || 'en-US';
+    speechBaseDraftRef.current = draft;
+    recognitionRef.current = recognition;
+
+    recognition.onstart = () => {
+      setVoiceError(null);
+      setListening(true);
+    };
+    recognition.onresult = (event) => {
+      const transcript = transcriptFromResults(event.results);
+      setDraft(combineSpeechDraft(speechBaseDraftRef.current, transcript));
+    };
+    recognition.onerror = (event) => {
+      setVoiceError(speechRecognitionErrorMessage(event.error));
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setListening(false);
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      setVoiceError('Voice input could not start. Try again.');
+    }
+  }, [draft, listening, stopListening]);
+
+  useEffect(() => () => {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (recognition) {
+      recognition.onend = null;
+      recognition.abort();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mode === 'minimized' && listening) stopListening();
+  }, [listening, mode, stopListening]);
 
   const scrollMessagesToBottom = useCallback(() => {
     const messagesElement = messagesRef.current;
@@ -137,6 +216,7 @@ const CommandCenter = forwardRef(function CommandCenter({
     const prompt = String(value || '').trim();
     if (!prompt || working) return;
 
+    stopListening();
     setDraft('');
     setError(null);
     setWorking(true);
@@ -162,7 +242,7 @@ const CommandCenter = forwardRef(function CommandCenter({
     } finally {
       setWorking(false);
     }
-  }, [addMessage, refreshHistory, token, working]);
+  }, [addMessage, refreshHistory, stopListening, token, working]);
 
   useImperativeHandle(ref, () => ({
     focus() {
@@ -455,13 +535,33 @@ const CommandCenter = forwardRef(function CommandCenter({
       </div>
 
       <form className="assistant-composer" onSubmit={handleSubmit}>
-        <textarea ref={composerRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            event.currentTarget.form?.requestSubmit();
-          }
-        }} placeholder="Ask JDHub to find something or take an action…" rows={2} />
-        <button aria-label="Send" disabled={working || !draft.trim()} type="submit"><Send size={18} /></button>
+        <div className="assistant-composer-input">
+          <textarea aria-label="Assistant message" readOnly={listening} ref={composerRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }} placeholder="Ask JDHub to find something or take an action…" rows={2} />
+          {(listening || voiceError) && (
+            <small aria-live="polite" className={`assistant-voice-status${voiceError ? ' has-error' : ''}`}>
+              {voiceError || 'Listening… tap stop when you are finished.'}
+            </small>
+          )}
+        </div>
+        <div className="assistant-composer-actions">
+          <button
+            aria-label={listening ? 'Stop voice input' : 'Start voice input'}
+            aria-pressed={listening}
+            className={`assistant-voice-button${listening ? ' is-listening' : ''}`}
+            disabled={working || !speechSupported}
+            onClick={toggleListening}
+            title={speechSupported ? (listening ? 'Stop listening' : 'Use voice input') : 'Voice input is not supported in this browser'}
+            type="button"
+          >
+            {listening ? <Square size={15} /> : <Mic size={18} />}
+          </button>
+          <button aria-label="Send" className="assistant-send-button" disabled={working || !draft.trim()} type="submit"><Send size={18} /></button>
+        </div>
       </form>
     </div>
   );

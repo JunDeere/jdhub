@@ -5,6 +5,8 @@ and remains in the `0.x` pre-stable phase.
 
 ## Unreleased
 
+- Added review-before-send voice dictation to the JDHub Assistant on browsers
+  that support the Web Speech API.
 - Hardened browser access to fail closed without a valid explicit CORS
   allowlist and added general API rate limiting beneath the stricter
   authentication limit.
