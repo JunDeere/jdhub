@@ -21,7 +21,6 @@ import {
   Server,
   Settings,
   Sparkles,
-  Star,
   CheckCheck,
   X,
 } from 'lucide-react';
@@ -45,7 +44,6 @@ const LifeLog = lazy(() => import('./pages/LifeLog.jsx'));
 const ModuleStatus = lazy(() => import('./pages/ModuleStatus.jsx'));
 const Projects = lazy(() => import('./pages/Projects.jsx'));
 const PublicShare = lazy(() => import('./pages/PublicShare.jsx'));
-const Reviews = lazy(() => import('./pages/Reviews.jsx'));
 const Scheduling = lazy(() => import('./pages/Scheduling.jsx'));
 const Security = lazy(() => import('./pages/Security.jsx'));
 const ServerManager = lazy(() => import('./pages/ServerManager.jsx'));
@@ -57,7 +55,7 @@ const SIDEBAR_KEY = 'jdhubSidebarCollapsed';
 const SIDEBAR_WIDTH_KEY = 'jdhubSidebarWidth';
 const ASSISTANT_WIDTH_KEY = 'jdhubAssistantWidth';
 const PORTFOLIO_DEMO_PAGE_IDS = new Set(['dashboard', 'projects', 'tasks', 'scheduling', 'knowledge-base']);
-const DIRECT_HASH_PAGE_IDS = new Set([...PORTFOLIO_DEMO_PAGE_IDS, 'reviews', 'settings']);
+const DIRECT_HASH_PAGE_IDS = new Set([...PORTFOLIO_DEMO_PAGE_IDS, 'settings']);
 
 function ModuleLoading() {
   return (
@@ -78,7 +76,6 @@ const navIcons = {
   'command-center': Sparkles,
   'life-log': NotebookPen,
   diary: BookLock,
-  reviews: Star,
   tasks: ClipboardList,
   scheduling: CalendarDays,
   finance: CircleDollarSign,
@@ -107,7 +104,6 @@ const navGroups = [
     tone: 'personal',
     items: [
       { id: 'diary', label: 'Diary' },
-      { id: 'reviews', label: 'Reviews' },
       { id: 'life-log', label: 'Notes' },
       { id: 'tasks', label: 'Tasks' },
       { id: 'scheduling', label: 'Scheduling' },
@@ -806,8 +802,6 @@ function PrivateApp() {
         ? <LifeLog token={token} refreshKey={moduleRefreshKey} onEntriesChanged={handleDataChanged} />
       : activePage === 'diary'
         ? <Diary token={token} />
-      : activePage === 'reviews'
-        ? <Reviews token={token} onNavigate={navigateToPage} />
       : activePage === 'tasks'
         ? <Tasks token={token} refreshKey={moduleRefreshKey} onTasksChanged={handleDataChanged} />
       : activePage === 'finance'

@@ -5,6 +5,8 @@ and remains in the `0.x` pre-stable phase.
 
 ## Unreleased
 
+- Removed the Daily/Weekly Reviews module, including its navigation, interface,
+  API, model, summary service, and dedicated tests.
 - Added review-before-send voice dictation to the JDHub Assistant on browsers
   that support the Web Speech API.
 - Hardened browser access to fail closed without a valid explicit CORS
